@@ -272,11 +272,8 @@ class TestAggregateTemporal:
 # resample_spatial
 # ---------------------------------------------------------------
 
-try:
-    import rioxarray  # noqa: F401
-    _HAS_RIOXARRAY = True
-except ImportError:
-    _HAS_RIOXARRAY = False
+import importlib.util
+_HAS_RIOXARRAY = importlib.util.find_spec("rioxarray") is not None
 
 
 def _make_geo_raster() -> xr.DataArray:
