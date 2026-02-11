@@ -28,9 +28,14 @@ jobs:
         shell: bash
         run: |
           for i in 1 2 3 4 5; do
-            uv python install ${{ matrix.python-version }} && break || sleep $((2 ** i))
+            if uv python install ${{ matrix.python-version }}; then
+              exit 0
+            fi
+            if [ $i -lt 5 ]; then
+              sleep $((2 ** i))
+            fi
           done
-          uv python install ${{ matrix.python-version }}
+          exit 1
 
       - name: Pin Python version for this job
         run: uv python pin ${{ matrix.python-version }}
