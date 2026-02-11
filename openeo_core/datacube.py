@@ -7,7 +7,7 @@ Usage::
     cube = DataCube.load_collection("sentinel-2-l2a", spatial_extent=..., bands=[...])
     result = cube.filter_bbox(west=..., south=..., east=..., north=...) \
                  .filter_temporal(extent=("2023-01-01", "2023-06-30")) \
-                 .ndvi(nir="B08", red="B04") \
+                 .ndvi(nir="nir", red="red") \
                  .compute()
 """
 
@@ -177,8 +177,8 @@ class DataCube:
         south: float,
         east: float,
         north: float,
-        x_dim: str = "x",
-        y_dim: str = "y",
+        x_dim: str = "longitude",
+        y_dim: str = "latitude",
     ) -> "DataCube":
         """Filter data to a bounding box."""
         if self.is_raster:
@@ -198,7 +198,7 @@ class DataCube:
         self,
         *,
         extent: tuple[str, str],
-        t_dim: str = "t",
+        t_dim: str = "time",
     ) -> "DataCube":
         """Filter a raster cube to a temporal interval."""
         self._assert_raster("filter_temporal")
@@ -211,8 +211,8 @@ class DataCube:
         geometries: Any = None,
         *,
         reducer: str = "mean",
-        x_dim: str = "x",
-        y_dim: str = "y",
+        x_dim: str = "longitude",
+        y_dim: str = "latitude",
     ) -> "DataCube":
         """Aggregate raster values over spatial geometries."""
         self._assert_raster("aggregate_spatial")
@@ -227,13 +227,75 @@ class DataCube:
         *,
         period: str = "month",
         reducer: str = "mean",
-        t_dim: str = "t",
+        dimension: str | None = None,
+        t_dim: str = "time",
     ) -> "DataCube":
-        """Aggregate raster values over calendar periods."""
+        """Aggregate raster values over calendar periods.
+
+        Parameters
+        ----------
+        period : str
+            Calendar period: ``"hour"``, ``"day"``, ``"week"``, ``"dekad"``,
+            ``"month"``, ``"season"``, ``"tropical-season"``, ``"year"``,
+            ``"decade"``, ``"decade-ad"``.
+        reducer : str
+            Named reducer (``"mean"``, ``"sum"``, ``"min"``, ``"max"``,
+            ``"median"``).
+        dimension : str | None
+            Explicit temporal dimension name.  When ``None`` (default),
+            falls back to *t_dim*.
+        t_dim : str
+            Legacy alias for the temporal dimension name.
+        """
         self._assert_raster("aggregate_temporal")
         from openeo_core.ops.raster import aggregate_temporal as _agg
 
-        return DataCube(_agg(self._data, period=period, reducer=reducer, t_dim=t_dim))  # type: ignore[arg-type]
+        effective_dim = dimension if dimension is not None else t_dim
+        return DataCube(_agg(self._data, period=period, reducer=reducer, t_dim=effective_dim))  # type: ignore[arg-type]
+
+    # Alias matching the openEO process id
+    aggregate_temporal_period = aggregate_temporal
+
+    def resample_spatial(
+        self,
+        *,
+        resolution: float | list[float] = 0,
+        projection: int | str | None = None,
+        method: str = "near",
+        align: str = "upper-left",
+        x_dim: str = "longitude",
+        y_dim: str = "latitude",
+    ) -> "DataCube":
+        """Resample and/or reproject spatial dimensions.
+
+        Requires the ``rioxarray`` optional dependency (``uv sync --extra geo``).
+
+        Parameters
+        ----------
+        resolution : float | list[float]
+            Target resolution.  A single number for both axes, or
+            ``[x_res, y_res]``.  ``0`` keeps the original resolution.
+        projection : int | str | None
+            Target CRS as EPSG code or WKT2 string.  ``None`` keeps current.
+        method : str
+            Resampling method (``"near"``, ``"bilinear"``, ``"cubic"``, etc.).
+        align : str
+            Corner alignment.
+        """
+        self._assert_raster("resample_spatial")
+        from openeo_core.ops.raster import resample_spatial as _rs
+
+        return DataCube(
+            _rs(
+                self._data,  # type: ignore[arg-type]
+                resolution=resolution,
+                projection=projection,
+                method=method,
+                align=align,
+                x_dim=x_dim,
+                y_dim=y_dim,
+            )
+        )
 
     def apply(
         self,
@@ -263,6 +325,20 @@ class DataCube:
         if hasattr(self._data, "compute"):
             return DataCube(self._data.compute())
         return self
+
+    # ------------------------------------------------------------------
+    # Plotting
+    # ------------------------------------------------------------------
+
+    def plot(self, *args: Any, **kwargs: Any) -> Any:
+        """Delegate to the underlying data object's ``.plot()`` method.
+
+        For raster cubes this calls :meth:`xarray.DataArray.plot`;
+        for vector cubes it calls :meth:`geopandas.GeoDataFrame.plot`.
+
+        All positional and keyword arguments are forwarded as-is.
+        """
+        return self._data.plot(*args, **kwargs)
 
     # ------------------------------------------------------------------
     # Dunder helpers

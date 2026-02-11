@@ -15,7 +15,7 @@ dependencies = [
     "dask-geopandas",
     "pystac",
     "pystac-client",
-    "stackstac",
+    "stackstac>=0.5.1",
     "planetary-computer",
     "shapely",
     "pandas",
@@ -26,18 +26,15 @@ dependencies = [
 ml-sklearn = ["scikit-learn", "joblib"]
 ml-xgboost = ["xgboost"]
 ml-torch = ["torch"]
-geo = ["rioxarray"]
 all = [
     "scikit-learn",
     "xgboost",
-    "rioxarray",
 ]
 dev = [
     "pytest",
     "pytest-cov",
     "scikit-learn",
     "xgboost",
-    "rioxarray",
 ]
 
 [build-system]

@@ -116,24 +116,37 @@ class AWSCollectionLoader:
         stack_kwargs: dict[str, Any] = {}
         if bands is not None:
             stack_kwargs["assets"] = bands
+
+        # Detect CRS from item properties (proj:code / proj:epsg).
+        # Earth Search v1 stores CRS per-asset, but items often carry
+        # proj:code at the properties level.  If items span multiple
+        # CRS zones we fall back to EPSG:4326 for a common grid.
+        detected_epsg = _detect_common_epsg(items)
+        stack_kwargs.setdefault("epsg", detected_epsg)
+
         if spatial_extent is not None:
-            stack_kwargs["bounds_latlon"] = [
+            bounds = [
                 spatial_extent["west"],
                 spatial_extent["south"],
                 spatial_extent["east"],
                 spatial_extent["north"],
             ]
+            stack_kwargs.setdefault("bounds_latlon", bounds)
 
         stack_kwargs.update(kwargs)
 
         da: xr.DataArray = stackstac.stack(items, **stack_kwargs)
 
-        # Rename dimensions to the library's conventional names
+        # Rename dimensions to the library's conventional names.
+        # stackstac produces: (time, band, y, x)
+        # We normalise to: (time, bands, latitude, longitude)
         rename_map: dict[str, str] = {}
-        if "time" in da.dims:
-            rename_map["time"] = "t"
         if "band" in da.dims:
             rename_map["band"] = "bands"
+        if "y" in da.dims:
+            rename_map["y"] = "latitude"
+        if "x" in da.dims:
+            rename_map["x"] = "longitude"
         if rename_map:
             da = da.rename(rename_map)
 
@@ -173,3 +186,37 @@ def load_collection(
         properties=properties,
         **kwargs,
     )
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _detect_common_epsg(items: list) -> int:
+    """Try to find a common EPSG code across STAC items.
+
+    Looks at ``proj:code`` / ``proj:epsg`` in item properties.
+    If all items share the same CRS, return that EPSG code;
+    otherwise fall back to ``4326`` (WGS 84).
+    """
+    codes: set[int] = set()
+    for item in items:
+        props = item.properties if hasattr(item, "properties") else {}
+        # proj:code is e.g. "EPSG:32632"
+        code_str = props.get("proj:code", "")
+        if code_str and code_str.upper().startswith("EPSG:"):
+            try:
+                codes.add(int(code_str.split(":")[1]))
+            except (ValueError, IndexError):
+                # Ignore malformed proj:code values; rely on proj:epsg or fallback CRS.
+                pass
+        # proj:epsg is a direct integer
+        epsg = props.get("proj:epsg")
+        if isinstance(epsg, int):
+            codes.add(epsg)
+
+    if len(codes) == 1:
+        return codes.pop()
+    # Multiple CRS zones or none detected → use WGS 84
+    return 4326

@@ -75,26 +75,36 @@ class DefaultStacLoader:
         if len(items) == 0:
             raise ValueError("No STAC items matched the given filters.")
 
+        from openeo_core.io.collection import _detect_common_epsg
+
         stack_kwargs: dict[str, Any] = {}
         if assets is not None:
             stack_kwargs["assets"] = assets
+
+        # Ensure a CRS is always set (items may store CRS per-asset only)
+        stack_kwargs.setdefault("epsg", _detect_common_epsg(items))
+
         if spatial_extent is not None:
-            stack_kwargs["bounds_latlon"] = [
+            stack_kwargs.setdefault("bounds_latlon", [
                 spatial_extent["west"],
                 spatial_extent["south"],
                 spatial_extent["east"],
                 spatial_extent["north"],
-            ]
+            ])
         stack_kwargs.update(kwargs)
 
         da: xr.DataArray = stackstac.stack(items, **stack_kwargs)
 
-        # Normalise dimension names
+        # Normalise dimension names.
+        # stackstac produces: (time, band, y, x)
+        # We normalise to: (time, bands, latitude, longitude)
         rename: dict[str, str] = {}
-        if "time" in da.dims:
-            rename["time"] = "t"
         if "band" in da.dims:
             rename["band"] = "bands"
+        if "y" in da.dims:
+            rename["y"] = "latitude"
+        if "x" in da.dims:
+            rename["x"] = "longitude"
         if rename:
             da = da.rename(rename)
 
