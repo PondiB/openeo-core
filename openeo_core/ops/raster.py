@@ -511,15 +511,21 @@ def _resample_nd(
     """Handle resample_spatial for arrays with >3 dimensions.
 
     Flattens extra non-spatial dims into a single dimension using
-    numpy reshape, reprojects the 3-D array, then reshapes back.
+    dask-compatible reshape, reprojects the 3-D array, then reshapes back.
+
+    .. warning::
+       This function uses rioxarray's reproject operation, which currently
+       forces computation of dask-backed arrays. If the input has a dask-backed
+       array, the result will be computed and returned as a numpy array.
+       See: https://github.com/corteva/rioxarray/issues/481
     """
     # Save extra-dim metadata (sizes, coords)
     extra_sizes = [data.sizes[d] for d in extra_dims]
     extra_coords = {d: data.coords[d] for d in extra_dims if d in data.coords}
 
-    # Transpose to (extra..., y, x) then flatten extra dims via numpy
+    # Transpose to (extra..., y, x) then flatten extra dims (dask-safe)
     data = data.transpose(*extra_dims, y_dim, x_dim)
-    vals = data.values  # shape: (*extra_sizes, ny, nx)
+    vals = data.data  # shape: (*extra_sizes, ny, nx) - keeps dask arrays lazy
     orig_shape = vals.shape
     ny, nx = orig_shape[-2], orig_shape[-1]
     flat_n = int(np.prod(extra_sizes))
@@ -556,10 +562,10 @@ def _resample_nd(
     # rioxarray renames spatial dims to 'y'/'x' — restore original names
     flat_da = _restore_spatial_dim_names(flat_da, x_dim, y_dim)
 
-    # Reshape back to original extra dims
+    # Reshape back to original extra dims (dask-safe)
     new_ny = flat_da.sizes[y_dim]
     new_nx = flat_da.sizes[x_dim]
-    result_vals = flat_da.values.reshape(*extra_sizes, new_ny, new_nx)
+    result_vals = flat_da.data.reshape(*extra_sizes, new_ny, new_nx)
 
     # Rebuild DataArray with original extra-dim coordinates
     result = xr.DataArray(
