@@ -25,7 +25,11 @@ jobs:
           version: "latest"
 
       - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+        shell: bash
+        run: |
+          for i in 1 2 3 4 5; do
+            uv python install ${{ matrix.python-version }} && break || sleep $((2 ** i))
+          done
 
       - name: Pin Python version for this job
         run: uv python pin ${{ matrix.python-version }}
