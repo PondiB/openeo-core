@@ -298,7 +298,7 @@ def _season_label_from_dt(dt) -> str:
     dt = pd.Timestamp(dt)
     m = dt.month
     if m in (12, 1, 2):
-        year = dt.year if m == 12 else dt.year
+        year = dt.year + 1 if m == 12 else dt.year
         return f"{year}-djf"
     elif m in (3, 4, 5):
         return f"{dt.year}-mam"
