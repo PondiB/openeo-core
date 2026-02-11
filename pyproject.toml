@@ -15,11 +15,12 @@ dependencies = [
     "dask-geopandas",
     "pystac",
     "pystac-client",
-    "stackstac",
+    "stackstac>=0.5.1",
     "planetary-computer",
     "shapely",
     "pandas",
     "joblib",
+    "rioxarray>=0.19.0",
 ]
 
 [project.optional-dependencies]

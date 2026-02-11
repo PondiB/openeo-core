@@ -4,7 +4,32 @@ A standalone Python library providing a fluent, Pythonic API for working with **
 
 ## Installation
 
+### Install from GitHub
+
 ```bash
+# With uv
+uv pip install git+https://github.com/PondiB/openeo-core.git
+
+# With pip
+pip install git+https://github.com/PondiB/openeo-core.git
+```
+
+Optional extras (ML backends, geo tools, dev):
+
+```bash
+uv pip install "openeo-core[ml-sklearn,ml-xgboost] @ git+https://github.com/PondiB/openeo-core.git"
+# or
+pip install "openeo-core[dev] @ git+https://github.com/PondiB/openeo-core.git"
+```
+
+### Install from source (development)
+
+Clone the repository and sync dependencies:
+
+```bash
+git clone https://github.com/PondiB/openeo-core.git
+cd openeo-core
+
 # Core install (xarray, dask, geopandas, pystac-client, stackstac)
 uv sync
 
