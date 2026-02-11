@@ -17,7 +17,7 @@ pip install git+https://github.com/PondiB/openeo-core.git
 Optional extras (ML backends, geo tools, dev):
 
 ```bash
-# Geo tools (rioxarray for resample_spatial, xvec for vector data cubes)
+# Geo tools (rioxarray for resample_spatial; xvec is a core dependency for vector/aggregate_spatial)
 uv pip install "openeo-core[geo] @ git+https://github.com/PondiB/openeo-core.git"
 
 # ML backends
@@ -180,7 +180,7 @@ vector = DataCube.load_geojson({"type": "FeatureCollection", "features": [...]})
 
 ### Vector cubes (GeoDataFrame and xvec)
 
-Vector cubes can be GeoDataFrames or xarray DataArrays/Datasets with xvec geometry coordinates. Install the ``geo`` extra for xvec support:
+Vector cubes can be GeoDataFrames or xarray DataArrays/Datasets with xvec geometry coordinates:
 
 ```bash
 uv pip install "openeo-core[geo]"
@@ -200,6 +200,11 @@ da = xr.DataArray(
 cube = DataCube(da)
 result = cube.filter_bbox(west=9, south=49, east=11, north=51)
 ```
+
+## Documentation
+
+- **[docs/index.md](docs/index.md)** — Documentation index
+- **[docs/architecture.md](docs/architecture.md)** — Software structure, design, and component overview
 
 ## Architecture
 

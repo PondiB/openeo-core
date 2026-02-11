@@ -1083,6 +1083,7 @@ dependencies = [
     { name = "stackstac" },
     { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "xarray", version = "2026.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "xvec" },
 ]
 
 [package.optional-dependencies]
@@ -1101,7 +1102,6 @@ dev = [
 geo = [
     { name = "rioxarray", version = "0.19.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "rioxarray", version = "0.20.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "xvec" },
 ]
 ml-sklearn = [
     { name = "joblib" },
@@ -1137,11 +1137,11 @@ requires-dist = [
     { name = "shapely" },
     { name = "stackstac", specifier = ">=0.5.1" },
     { name = "torch", marker = "extra == 'ml-torch'" },
-    { name = "xarray" },
+    { name = "xarray", specifier = ">=2024.2.0" },
     { name = "xgboost", marker = "extra == 'all'" },
     { name = "xgboost", marker = "extra == 'dev'" },
     { name = "xgboost", marker = "extra == 'ml-xgboost'" },
-    { name = "xvec", marker = "extra == 'geo'" },
+    { name = "xvec" },
 ]
 
 [[package]]

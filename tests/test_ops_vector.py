@@ -9,11 +9,7 @@ from shapely.geometry import Point
 
 from openeo_core.ops.vector import filter_bbox, to_feature_matrix
 
-try:
-    import xvec  # noqa: F401
-    _HAS_XVEC = True
-except ImportError:
-    _HAS_XVEC = False
+import xvec  # noqa: F401
 
 
 def _make_gdf() -> gpd.GeoDataFrame:
@@ -47,7 +43,6 @@ class TestToFeatureMatrix:
         assert X.shape == (3, 1)
 
 
-@pytest.mark.skipif(not _HAS_XVEC, reason="xvec not installed")
 class TestFilterBboxXvec:
     def test_filter_bbox_xvec(self):
         """filter_bbox works on xvec-backed DataArray."""
@@ -79,7 +74,6 @@ class TestFilterBboxXvec:
         assert "val" in result.data_vars
 
 
-@pytest.mark.skipif(not _HAS_XVEC, reason="xvec not installed")
 class TestToFeatureMatrixXvec:
     def test_to_feature_matrix_xvec(self):
         """to_feature_matrix converts xvec DataArray via GeoDataFrame."""

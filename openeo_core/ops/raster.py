@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, Sequence
+
+if TYPE_CHECKING:
+    import geopandas
 
 import numpy as np
 import pandas as pd
@@ -182,23 +186,123 @@ def aggregate_spatial(
     reducer: str = "mean",
     x_dim: str = "longitude",
     y_dim: str = "latitude",
-) -> xr.DataArray:
+    t_dim: str = "time",
+    bands_dim: str = "bands",
+) -> xr.DataArray | "geopandas.GeoDataFrame":
     """Aggregate raster values over spatial geometries.
 
-    This is a simplified implementation that applies a named reducer
-    over the spatial dimensions.
+    When *geometries* is provided, computes zonal statistics (one value per
+    geometry per band) and returns a GeoDataFrame (vector cube).
+
+    When *geometries* is ``None``, applies the reducer over the full spatial
+    extent and returns a scalar DataArray.
 
     Parameters
     ----------
     data : xr.DataArray
         Raster cube.
-    geometries
-        Not used in the simplified path – aggregates over the full spatial extent.
-        A future version will clip/mask per geometry.
+    geometries : str | geopandas.GeoDataFrame | geopandas.GeoSeries | None
+        Path to a GeoJSON file, or a GeoDataFrame/GeoSeries of polygons.
+        If ``None``, aggregates over the full extent.
     reducer : str
         One of ``"mean"``, ``"sum"``, ``"min"``, ``"max"``, ``"median"``.
+    x_dim, y_dim : str
+        Spatial dimension names.
+    t_dim, bands_dim : str
+        Temporal and bands dimension names (for flattening to feature table).
     """
-    return getattr(data, reducer)(dim=[x_dim, y_dim])
+    import geopandas as gpd
+
+    if geometries is None:
+        return getattr(data, reducer)(dim=[x_dim, y_dim])
+
+    # Load geometries
+    if isinstance(geometries, (str, Path)):
+        gdf = gpd.read_file(geometries)
+        geoms = gdf.geometry
+        extra_cols = gdf.drop(columns=["geometry"])
+    else:
+        geoms = geometries.geometry if isinstance(geometries, gpd.GeoDataFrame) else geometries
+        extra_cols = (
+            geometries.drop(columns=["geometry"])
+            if isinstance(geometries, gpd.GeoDataFrame)
+            else None
+        )
+
+    import xvec  # noqa: F401
+
+    # Align CRS: geometries must match raster CRS for zonal_stats
+    data_crs = None
+    if hasattr(data, "rio") and data.rio.crs is not None:
+        data_crs = str(data.rio.crs)
+    if data_crs is None:
+        try:
+            import stackstac
+            data_epsg = stackstac.array_epsg(data, default=None)
+            if data_epsg is not None:
+                data_crs = f"EPSG:{data_epsg}"
+        except Exception:
+            pass
+    if data_crs is not None and geoms.crs is not None:
+        geoms_crs = str(geoms.crs)
+        if geoms_crs != data_crs:
+            geoms = geoms.to_crs(data_crs)
+        # Filter to geometries that intersect raster bounds (avoids xvec IndexError when none overlap)
+        x_min = float(data.coords[x_dim].min())
+        x_max = float(data.coords[x_dim].max())
+        y_min = float(data.coords[y_dim].min())
+        y_max = float(data.coords[y_dim].max())
+        from shapely.geometry import box
+        raster_box = box(x_min, y_min, x_max, y_max)
+        mask = geoms.intersects(raster_box)
+        if not mask.any():
+            raise ValueError(
+                "No training geometries intersect the raster extent. "
+                "Check that geometries and raster cover the same area (e.g. same bbox, CRS alignment)."
+            )
+        geoms = geoms[mask]
+        if extra_cols is not None:
+            extra_cols = extra_cols.loc[mask]
+
+    # xvec.zonal_stats: stats="mean"|"median"|"sum"|"min"|"max"
+    stats = reducer if reducer in ("mean", "median", "sum", "min", "max") else "mean"
+    zonal = data.xvec.zonal_stats(
+        geoms,
+        x_coords=x_dim,
+        y_coords=y_dim,
+        stats=stats,
+    )
+    if hasattr(zonal, "compute"):
+        zonal = zonal.compute()
+
+    # Flatten to (geometry, features) for ML: collapse time and bands into columns
+    non_geom_dims = [d for d in zonal.dims if d != "geometry"]
+    if len(non_geom_dims) > 1:
+        stacked = zonal.stack(_flat=tuple(non_geom_dims), create_index=False).transpose(
+            "geometry", "_flat"
+        )
+        if bands_dim in zonal.dims and t_dim in zonal.dims:
+            labels = [
+                f"{b}_{str(t)[:7]}"
+                for t in zonal.coords[t_dim].values
+                for b in zonal.coords[bands_dim].values
+            ]
+        elif bands_dim in zonal.dims:
+            labels = list(zonal.coords[bands_dim].values)
+        else:
+            labels = [str(i) for i in range(stacked.sizes["_flat"])]
+        geom_index = stacked.coords["geometry"].values
+        wide = pd.DataFrame(stacked.values, index=geom_index, columns=labels)
+    else:
+        wide = zonal.to_dataframe()
+        geom_index = wide.index
+        if "geometry" in wide.columns:
+            wide = wide.drop(columns=["geometry"])
+    gdf_out = gpd.GeoDataFrame(wide, geometry=geom_index, crs=geoms.crs)
+    if extra_cols is not None and len(extra_cols.columns) > 0:
+        for c in extra_cols.columns:
+            gdf_out[c] = extra_cols[c].values
+    return gdf_out
 
 
 # ---------------------------------------------------------------------------

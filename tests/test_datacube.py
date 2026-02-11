@@ -1,5 +1,7 @@
 """Tests for the DataCube fluent wrapper."""
 
+import importlib.util
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -9,12 +11,7 @@ from shapely.geometry import Point
 
 from openeo_core.datacube import DataCube
 
-try:
-    import xvec  # noqa: F401
-    _HAS_XVEC = True
-except ImportError:
-    _HAS_XVEC = False
-import importlib.util
+import xvec  # noqa: F401
 
 
 def _make_raster_da() -> xr.DataArray:
@@ -174,7 +171,6 @@ class TestDataCubeVector:
         assert "Vector" in v
 
 
-@pytest.mark.skipif(not _HAS_XVEC, reason="xvec not installed")
 class TestDataCubeVectorXvec:
     def test_xvec_is_vector(self):
         """DataCube recognises xvec-backed DataArray as vector."""

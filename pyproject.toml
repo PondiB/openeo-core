@@ -9,10 +9,11 @@ authors = [{ name = "Brian Pondi" }]
 
 dependencies = [
     "numpy",
-    "xarray",
+    "xarray>=2024.2.0",
     "dask[array,dataframe,distributed]",
     "geopandas",
     "dask-geopandas",
+    "xvec",
     "pystac",
     "pystac-client",
     "stackstac>=0.5.1",
@@ -26,7 +27,7 @@ dependencies = [
 ml-sklearn = ["scikit-learn", "joblib"]
 ml-xgboost = ["xgboost"]
 ml-torch = ["torch"]
-geo = ["rioxarray", "xvec"]
+geo = ["rioxarray"]
 all = [
     "scikit-learn",
     "xgboost",
