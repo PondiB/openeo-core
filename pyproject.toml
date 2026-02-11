@@ -27,7 +27,6 @@ dependencies = [
 ml-sklearn = ["scikit-learn", "joblib"]
 ml-xgboost = ["xgboost"]
 ml-torch = ["torch"]
-geo = []
 all = [
     "scikit-learn",
     "xgboost",
