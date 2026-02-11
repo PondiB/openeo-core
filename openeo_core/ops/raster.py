@@ -319,7 +319,7 @@ def _dekad_label(dt) -> str:
         dekad_in_month = 1
     else:
         dekad_in_month = 2
-    dekad = (dt.month - 1) * 3 + dekad_in_month
+    dekad = (dt.month - 1) * 3 + dekad_in_month + 1
     return f"{dt.year}-{dekad:02d}"
 
 
