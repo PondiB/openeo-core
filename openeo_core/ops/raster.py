@@ -328,7 +328,10 @@ def _tropical_season_label(dt) -> str:
     import pandas as pd
     dt = pd.Timestamp(dt)
     if dt.month in (11, 12, 1, 2, 3, 4):
-        year = dt.year if dt.month >= 11 else dt.year
+        # Use the season's starting year: Nov–Dec in their calendar year,
+        # Jan–Apr assigned to the previous year so the whole Nov–Apr block
+        # shares the same season label.
+        year = dt.year if dt.month in (11, 12) else dt.year - 1
         return f"{year}-ndjfma"
     else:
         return f"{dt.year}-mjjaso"

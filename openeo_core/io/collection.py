@@ -209,6 +209,7 @@ def _detect_common_epsg(items: list) -> int:
             try:
                 codes.add(int(code_str.split(":")[1]))
             except (ValueError, IndexError):
+                # Ignore malformed proj:code values; rely on proj:epsg or fallback CRS.
                 pass
         # proj:epsg is a direct integer
         epsg = props.get("proj:epsg")
