@@ -8,6 +8,7 @@ import geopandas as gpd
 from shapely.geometry import Point
 
 from openeo_core.datacube import DataCube
+import importlib.util
 
 
 def _make_raster_da() -> xr.DataArray:
@@ -108,11 +109,7 @@ class TestDataCubeRaster:
         np.testing.assert_array_equal(computed.data.values, cube.data.values)
 
 
-try:
-    import rioxarray  # noqa: F401
-    _HAS_RIOXARRAY = True
-except ImportError:
-    _HAS_RIOXARRAY = False
+_HAS_RIOXARRAY = importlib.util.find_spec("rioxarray") is not None
 
 
 @pytest.mark.skipif(not _HAS_RIOXARRAY, reason="rioxarray not installed")
