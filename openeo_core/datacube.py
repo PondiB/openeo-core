@@ -13,12 +13,12 @@ Usage::
 
 from __future__ import annotations
 
-from typing import Any, Callable, Union
+from typing import Any, Callable
 
 import geopandas as gpd
 import xarray as xr
 
-from openeo_core.types import Cube, RasterCube, VectorCube
+from openeo_core.types import Cube
 
 
 class DataCube:
@@ -42,13 +42,17 @@ class DataCube:
 
     @property
     def is_raster(self) -> bool:
-        return isinstance(self._data, xr.DataArray)
+        if isinstance(self._data, xr.DataArray):
+            return not _is_xvec_vector(self._data)
+        return False
 
     @property
     def is_vector(self) -> bool:
-        return isinstance(self._data, (gpd.GeoDataFrame,)) or (
-            _has_dask_geopandas() and isinstance(self._data, _dask_geopandas().GeoDataFrame)
-        )
+        if isinstance(self._data, (gpd.GeoDataFrame,)):
+            return True
+        if _has_dask_geopandas() and isinstance(self._data, _dask_geopandas().GeoDataFrame):
+            return True
+        return _is_xvec_vector(self._data)
 
     # ------------------------------------------------------------------
     # Loaders (classmethods)
@@ -334,10 +338,13 @@ class DataCube:
         """Delegate to the underlying data object's ``.plot()`` method.
 
         For raster cubes this calls :meth:`xarray.DataArray.plot`;
-        for vector cubes it calls :meth:`geopandas.GeoDataFrame.plot`.
+        for vector cubes from GeoDataFrame calls :meth:`geopandas.GeoDataFrame.plot`;
+        for xvec-backed vectors calls :meth:`xarray.DataArray.xvec.plot`.
 
         All positional and keyword arguments are forwarded as-is.
         """
+        if self.is_vector and _is_xvec_vector(self._data):
+            return self._data.xvec.plot(*args, **kwargs)
         return self._data.plot(*args, **kwargs)
 
     # ------------------------------------------------------------------
@@ -360,6 +367,24 @@ class DataCube:
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+
+def _is_xvec_vector(obj: Any) -> bool:
+    """Return True if *obj* is an xarray object with xvec geometry coordinates."""
+    if not isinstance(obj, (xr.DataArray, xr.Dataset)):
+        return False
+    try:
+        import xvec  # noqa: F401
+    except ImportError:
+        return False
+    if not hasattr(obj, "xvec"):
+        return False
+    try:
+        geom_coords = obj.xvec.geom_coords
+        geom_indexed = obj.xvec.geom_coords_indexed
+    except AttributeError:
+        return False
+    return bool(geom_coords) or bool(geom_indexed)
 
 
 def _has_dask_geopandas() -> bool:

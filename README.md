@@ -17,8 +17,13 @@ pip install git+https://github.com/PondiB/openeo-core.git
 Optional extras (ML backends, geo tools, dev):
 
 ```bash
+# Geo tools (rioxarray for resample_spatial, xvec for vector data cubes)
+uv pip install "openeo-core[geo] @ git+https://github.com/PondiB/openeo-core.git"
+
+# ML backends
 uv pip install "openeo-core[ml-sklearn,ml-xgboost] @ git+https://github.com/PondiB/openeo-core.git"
-# or
+
+# Dev tools
 pip install "openeo-core[dev] @ git+https://github.com/PondiB/openeo-core.git"
 ```
 
@@ -173,6 +178,29 @@ cube = DataCube.load_stac(
 vector = DataCube.load_geojson({"type": "FeatureCollection", "features": [...]})
 ```
 
+### Vector cubes (GeoDataFrame and xvec)
+
+Vector cubes can be GeoDataFrames or xarray DataArrays/Datasets with xvec geometry coordinates. Install the ``geo`` extra for xvec support:
+
+```bash
+uv pip install "openeo-core[geo]"
+```
+
+```python
+import xarray as xr
+from shapely.geometry import Point
+
+# Create xvec-backed vector cube
+da = xr.DataArray(
+    [1.0, 2.0, 3.0],
+    dims=["geom"],
+    coords={"geom": [Point(10, 50), Point(10.5, 50.5), Point(11, 51)]},
+).xvec.set_geom_indexes("geom", crs=4326)
+
+cube = DataCube(da)
+result = cube.filter_bbox(west=9, south=49, east=11, north=51)
+```
+
 ## Architecture
 
 ```
@@ -182,7 +210,7 @@ openeo_core/
   types.py             # RasterCube/VectorCube/Cube aliases
   ops/
     raster.py          # xarray/dask raster operations
-    vector.py          # geopandas/dask-geopandas operations
+    vector.py          # geopandas, dask-geopandas, xvec vector operations
   io/
     collection.py      # load_collection (pystac-client + stackstac)
     stac.py            # load_stac (pystac + stackstac)

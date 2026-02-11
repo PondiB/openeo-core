@@ -26,6 +26,7 @@ dependencies = [
 ml-sklearn = ["scikit-learn", "joblib"]
 ml-xgboost = ["xgboost"]
 ml-torch = ["torch"]
+geo = ["rioxarray", "xvec"]
 all = [
     "scikit-learn",
     "xgboost",

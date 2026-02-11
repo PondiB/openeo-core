@@ -8,6 +8,12 @@ import geopandas as gpd
 from shapely.geometry import Point
 
 from openeo_core.datacube import DataCube
+
+try:
+    import xvec  # noqa: F401
+    _HAS_XVEC = True
+except ImportError:
+    _HAS_XVEC = False
 import importlib.util
 
 
@@ -166,3 +172,31 @@ class TestDataCubeVector:
         assert "Raster" in r
         v = repr(DataCube(_make_vector_gdf()))
         assert "Vector" in v
+
+
+@pytest.mark.skipif(not _HAS_XVEC, reason="xvec not installed")
+class TestDataCubeVectorXvec:
+    def test_xvec_is_vector(self):
+        """DataCube recognises xvec-backed DataArray as vector."""
+        da = xr.DataArray(
+            [1.0, 2.0],
+            dims=["geom"],
+            coords={"geom": [Point(0, 0), Point(1, 1)]},
+        ).xvec.set_geom_indexes("geom", crs=4326)
+
+        cube = DataCube(da)
+        assert cube.is_vector
+        assert not cube.is_raster
+
+    def test_xvec_filter_bbox_fluent(self):
+        """filter_bbox works on xvec vector via DataCube."""
+        da = xr.DataArray(
+            [1.0, 2.0, 3.0],
+            dims=["geom"],
+            coords={"geom": [Point(10, 50), Point(10.5, 50.5), Point(11, 51)]},
+        ).xvec.set_geom_indexes("geom", crs=4326)
+
+        cube = DataCube(da)
+        result = cube.filter_bbox(west=9, south=49, east=11, north=51)
+        assert result.is_vector
+        assert result.data.sizes["geom"] >= 2
