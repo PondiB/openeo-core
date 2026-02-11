@@ -27,18 +27,15 @@ dependencies = [
 ml-sklearn = ["scikit-learn", "joblib"]
 ml-xgboost = ["xgboost"]
 ml-torch = ["torch"]
-geo = ["rioxarray"]
 all = [
     "scikit-learn",
     "xgboost",
-    "rioxarray",
 ]
 dev = [
     "pytest",
     "pytest-cov",
     "scikit-learn",
     "xgboost",
-    "rioxarray",
 ]
 
 [build-system]

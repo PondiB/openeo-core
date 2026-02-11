@@ -411,8 +411,7 @@ def resample_spatial(
     except ImportError:
         raise ImportError(
             "resample_spatial requires rioxarray.  "
-            "Install it with:  pip install rioxarray  "
-            "or:  uv sync --extra geo"
+            "Install it with:  pip install rioxarray"
         )
 
     from rasterio.enums import Resampling
