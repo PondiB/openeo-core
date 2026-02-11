@@ -30,6 +30,7 @@ jobs:
           for i in 1 2 3 4 5; do
             uv python install ${{ matrix.python-version }} && break || sleep $((2 ** i))
           done
+          uv python install ${{ matrix.python-version }}
 
       - name: Pin Python version for this job
         run: uv python pin ${{ matrix.python-version }}
