@@ -221,14 +221,43 @@ class TestAggregateTemporal:
             assert parts[1] in valid_suffixes
 
     def test_aggregate_temporal_dekad(self):
-        """Dekad aggregation should produce YYYY-DD labels."""
-        cube = _make_raster()
+        """Dekad aggregation should produce YYYY-DD labels with correct 1-based indexing."""
+        # Test with data that has specific known dates
+        np.random.seed(42)
+        data = np.random.rand(6, 2, 4, 4).astype(np.float32)
+        cube = xr.DataArray(
+            data,
+            dims=["time", "bands", "latitude", "longitude"],
+            coords={
+                "time": pd.to_datetime([
+                    "2023-01-05",  # Early January → dekad 01
+                    "2023-01-15",  # Mid January → dekad 02
+                    "2023-01-25",  # Late January → dekad 03
+                    "2023-02-08",  # Early February → dekad 04
+                    "2023-12-15",  # Mid December → dekad 35
+                    "2023-12-25",  # Late December → dekad 36
+                ]),
+                "bands": ["red", "nir"],
+                "latitude": np.linspace(50, 51, 4),
+                "longitude": np.linspace(10, 11, 4),
+            },
+        )
         result = aggregate_temporal(cube, period="dekad", reducer="mean")
         labels = [str(l) for l in result.coords["time"].values]
+        
+        # Verify format: YYYY-DD with two-digit dekad
         for lbl in labels:
             parts = lbl.split("-")
             assert len(parts) == 2
             assert len(parts[1]) == 2
+        
+        # Verify specific dekad values for known dates (1-based indexing)
+        assert "2023-01" in labels, "Early January should be dekad 01"
+        assert "2023-02" in labels, "Mid January should be dekad 02"
+        assert "2023-03" in labels, "Late January should be dekad 03"
+        assert "2023-04" in labels, "Early February should be dekad 04"
+        assert "2023-35" in labels, "Mid December should be dekad 35"
+        assert "2023-36" in labels, "Late December should be dekad 36"
 
     def test_aggregate_temporal_tropical_season(self):
         """Tropical-season aggregation should label with ndjfma or mjjaso."""

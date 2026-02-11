@@ -314,12 +314,12 @@ def _dekad_label(dt) -> str:
     dt = pd.Timestamp(dt)
     day = dt.day
     if day <= 10:
-        dekad_in_month = 0
-    elif day <= 20:
         dekad_in_month = 1
-    else:
+    elif day <= 20:
         dekad_in_month = 2
-    dekad = (dt.month - 1) * 3 + dekad_in_month + 1
+    else:
+        dekad_in_month = 3
+    dekad = (dt.month - 1) * 3 + dekad_in_month
     return f"{dt.year}-{dekad:02d}"
 
 
