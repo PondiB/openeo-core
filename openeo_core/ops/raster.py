@@ -297,10 +297,22 @@ def aggregate_spatial(
         geom_index = stacked.coords["geometry"].values
         wide = pd.DataFrame(stacked.values, index=geom_index, columns=labels)
     else:
+        # For 0 or 1 non-geometry dimensions, `to_dataframe()` may produce an index
+        # that includes the non-geometry dimension (e.g. MultiIndex (geometry, bands)).
+        # Extract the actual geometry objects from the index into a column and use that
+        # as the GeoDataFrame geometry.
         wide = zonal.to_dataframe()
-        geom_index = wide.index
+        # If geometry is stored as an index level, move it to a column.
+        if isinstance(wide.index, pd.MultiIndex) and "geometry" in wide.index.names:
+            wide = wide.reset_index("geometry")
         if "geometry" in wide.columns:
-            wide = wide.drop(columns=["geometry"])
+            # Use the geometry column values as the geometry array
+            geom_index = wide["geometry"].values
+            # Drop the geometry column from attributes and reset remaining index
+            wide = wide.drop(columns=["geometry"]).reset_index(drop=True)
+        else:
+            # Fallback: use geometries from the input GeoDataFrame, aligned by row
+            geom_index = geoms.geometry.values
     gdf_out = gpd.GeoDataFrame(wide, geometry=geom_index, crs=geoms.crs)
     if extra_cols is not None and len(extra_cols.columns) > 0:
         for c in extra_cols.columns:
