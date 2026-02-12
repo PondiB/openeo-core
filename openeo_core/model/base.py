@@ -272,6 +272,27 @@ def ml_fit(
     # Update total_parameters if available (tree models)
     trained.total_parameters = _count_parameters(trained._estimator)
 
+    # ------------------------------------------------------------------
+    # Infer spatial extent from training geometries
+    # ------------------------------------------------------------------
+    try:
+        if training_set.geometry is not None and not training_set.geometry.is_empty.all():
+            from shapely.geometry import mapping
+
+            # bbox: [west, south, east, north]
+            bounds = training_set.total_bounds  # (minx, miny, maxx, maxy)
+            trained.bbox = [float(v) for v in bounds]
+
+            # geometry: GeoJSON of the convex hull enclosing all training geometries
+            union = (
+                training_set.geometry.union_all()
+                if hasattr(training_set.geometry, "union_all")
+                else training_set.geometry.unary_union
+            )
+            trained.geometry = mapping(union.convex_hull)
+    except Exception:
+        pass  # spatial metadata is best-effort
+
     return trained
 
 
@@ -493,6 +514,8 @@ def load_stac_ml(
         properties_copy,
         estimator=estimator,
         backend=backend,
+        bbox=item.get("bbox"),
+        geometry=item.get("geometry"),
     )
     model._trained = True
 
@@ -583,6 +606,8 @@ def _clone_model(model: MLModel) -> MLModel:
         memory_size=model.memory_size,
         accelerator=model.accelerator,
         accelerator_constrained=model.accelerator_constrained,
+        bbox=list(model.bbox) if model.bbox else None,
+        geometry=_copy.deepcopy(model.geometry),
         estimator=_copy.deepcopy(model._estimator),
         backend=model._backend,
     )
