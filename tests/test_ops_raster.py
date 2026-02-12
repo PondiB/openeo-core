@@ -143,6 +143,150 @@ class TestAggregateSpatial:
         assert "longitude" not in result.dims
         assert "latitude" not in result.dims
 
+    def test_aggregate_spatial_with_geometries(self):
+        """Test zonal statistics with geometries returns a GeoDataFrame."""
+        import geopandas as gpd
+        from shapely.geometry import box
+
+        # Create a simple raster with known values
+        cube = _make_raster()
+        
+        # Create two simple box geometries within the raster extent
+        geom1 = box(10.0, 50.0, 10.5, 50.5)
+        geom2 = box(10.5, 50.5, 11.0, 51.0)
+        gdf = gpd.GeoDataFrame({"id": [1, 2]}, geometry=[geom1, geom2], crs="EPSG:4326")
+        
+        # Aggregate with geometries
+        result = aggregate_spatial(cube, gdf, reducer="mean")
+        
+        # Check that result is a GeoDataFrame
+        assert isinstance(result, gpd.GeoDataFrame)
+        
+        # Check that we have one row per geometry
+        assert len(result) == 2
+        
+        # Check that geometry column exists
+        assert result.geometry is not None
+        
+        # Check that we have feature columns (bands x time)
+        # Expected columns: red_2023-01, red_2023-02, nir_2023-01, nir_2023-02
+        assert len(result.columns) >= 4  # At least 4 feature columns
+        
+        # Check that extra columns are preserved
+        assert "id" in result.columns
+        assert result["id"].tolist() == [1, 2]
+
+    def test_aggregate_spatial_crs_alignment(self):
+        """Test that geometries are reprojected to match raster CRS."""
+        import geopandas as gpd
+        from shapely.geometry import box
+        import rioxarray  # noqa: F811
+        
+        # Create a geo-referenced raster in EPSG:4326
+        cube = _make_raster()
+        cube = cube.rio.set_spatial_dims(x_dim="longitude", y_dim="latitude")
+        cube = cube.rio.write_crs("EPSG:4326")
+        
+        # Create geometries in a different CRS (EPSG:3857 - Web Mercator)
+        # These coordinates are approximately the same location in Web Mercator
+        geom = box(1113194, 6446275, 1167600, 6621210)
+        gdf = gpd.GeoDataFrame({"id": [1]}, geometry=[geom], crs="EPSG:3857")
+        
+        # This should not raise an error; CRS should be aligned internally
+        result = aggregate_spatial(cube, gdf, reducer="mean")
+        
+        # Result should be a GeoDataFrame with the raster's CRS (geometries are reprojected)
+        assert isinstance(result, gpd.GeoDataFrame)
+        assert str(result.crs) == "EPSG:4326"  # Result uses raster CRS
+        
+        # Verify that we got valid results despite CRS mismatch
+        assert len(result) == 1
+
+    def test_aggregate_spatial_intersection_filter(self):
+        """Test that geometries outside raster bounds raise an error."""
+        import geopandas as gpd
+        from shapely.geometry import box
+        import rioxarray  # noqa: F811
+        
+        # Create a geo-referenced raster
+        cube = _make_raster()
+        cube = cube.rio.set_spatial_dims(x_dim="longitude", y_dim="latitude")
+        cube = cube.rio.write_crs("EPSG:4326")
+        
+        # Create geometries completely outside the raster bounds
+        # Raster is at longitude [10, 11], latitude [50, 51]
+        geom = box(20.0, 60.0, 21.0, 61.0)
+        gdf = gpd.GeoDataFrame({"id": [1]}, geometry=[geom], crs="EPSG:4326")
+        
+        # Should raise ValueError about no intersecting geometries
+        with pytest.raises(ValueError, match="No training geometries intersect"):
+            aggregate_spatial(cube, gdf, reducer="mean")
+
+    def test_aggregate_spatial_column_flattening(self):
+        """Test that time and bands dimensions are flattened to feature columns."""
+        import geopandas as gpd
+        from shapely.geometry import box
+        
+        # Create a raster with multiple time steps and bands
+        cube = _make_raster()
+        
+        # Create a geometry covering the entire raster
+        geom = box(10.0, 50.0, 11.0, 51.0)
+        gdf = gpd.GeoDataFrame({"id": [1]}, geometry=[geom], crs="EPSG:4326")
+        
+        # Aggregate
+        result = aggregate_spatial(cube, gdf, reducer="mean")
+        
+        # Check column naming: should have format "band_YYYY-MM"
+        # For 2 bands (red, nir) and 2 time steps (2023-01, 2023-02)
+        # We expect 4 feature columns
+        expected_cols = ["red_2023-01", "red_2023-02", "nir_2023-01", "nir_2023-02"]
+        for col in expected_cols:
+            assert col in result.columns, f"Expected column {col} not found"
+
+    def test_aggregate_spatial_extra_columns(self):
+        """Test that extra columns from input GeoDataFrame are preserved."""
+        import geopandas as gpd
+        from shapely.geometry import box
+        
+        cube = _make_raster()
+        
+        # Create GeoDataFrame with extra attribute columns
+        geom1 = box(10.0, 50.0, 10.5, 50.5)
+        geom2 = box(10.5, 50.5, 11.0, 51.0)
+        gdf = gpd.GeoDataFrame({
+            "id": [1, 2],
+            "name": ["zone_a", "zone_b"],
+            "category": ["forest", "urban"]
+        }, geometry=[geom1, geom2], crs="EPSG:4326")
+        
+        result = aggregate_spatial(cube, gdf, reducer="mean")
+        
+        # All extra columns should be preserved
+        assert "id" in result.columns
+        assert "name" in result.columns
+        assert "category" in result.columns
+        
+        # Check values are preserved correctly
+        assert result["id"].tolist() == [1, 2]
+        assert result["name"].tolist() == ["zone_a", "zone_b"]
+        assert result["category"].tolist() == ["forest", "urban"]
+
+    def test_aggregate_spatial_different_reducers(self):
+        """Test that different reducer functions work correctly."""
+        import geopandas as gpd
+        from shapely.geometry import box
+        
+        cube = _make_raster()
+        geom = box(10.0, 50.0, 11.0, 51.0)
+        gdf = gpd.GeoDataFrame({"id": [1]}, geometry=[geom], crs="EPSG:4326")
+        
+        # Test different reducers
+        for reducer in ["mean", "sum", "min", "max", "median"]:
+            result = aggregate_spatial(cube, gdf, reducer=reducer)
+            assert isinstance(result, gpd.GeoDataFrame)
+            assert len(result) == 1
+
 
 # ---------------------------------------------------------------
 # aggregate_temporal
