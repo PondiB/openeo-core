@@ -11,8 +11,6 @@ from shapely.geometry import Point
 
 from openeo_core.datacube import DataCube
 
-import xvec  # noqa: F401
-
 
 def _make_raster_da() -> xr.DataArray:
     np.random.seed(0)
@@ -174,6 +172,7 @@ class TestDataCubeVector:
 class TestDataCubeVectorXvec:
     def test_xvec_is_vector(self):
         """DataCube recognises xvec-backed DataArray as vector."""
+        import xvec  # noqa: F401
         da = xr.DataArray(
             [1.0, 2.0],
             dims=["geom"],
@@ -186,6 +185,7 @@ class TestDataCubeVectorXvec:
 
     def test_xvec_filter_bbox_fluent(self):
         """filter_bbox works on xvec vector via DataCube."""
+        import xvec  # noqa: F401
         da = xr.DataArray(
             [1.0, 2.0, 3.0],
             dims=["geom"],
