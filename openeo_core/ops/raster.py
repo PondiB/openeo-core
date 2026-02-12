@@ -242,6 +242,8 @@ def aggregate_spatial(
             if data_epsg is not None:
                 data_crs = f"EPSG:{data_epsg}"
         except Exception:
+            # Best-effort CRS detection via optional stackstac; on any failure,
+            # fall back to leaving ``data_crs`` as None and continue without it.
             pass
     if data_crs is not None and geoms.crs is not None:
         geoms_crs = str(geoms.crs)
