@@ -1,7 +1,6 @@
 """Tests for openeo_core.ops.vector module."""
 
 import numpy as np
-import pytest
 import xarray as xr
 
 import geopandas as gpd
