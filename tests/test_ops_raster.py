@@ -180,7 +180,7 @@ class TestAggregateSpatial:
         """Test that geometries are reprojected to match raster CRS."""
         import geopandas as gpd
         from shapely.geometry import box
-        import rioxarray  # noqa: F811
+        import rioxarray
         
         # Create a geo-referenced raster in EPSG:4326
         cube = _make_raster()
@@ -206,7 +206,7 @@ class TestAggregateSpatial:
         """Test that geometries outside raster bounds raise an error."""
         import geopandas as gpd
         from shapely.geometry import box
-        import rioxarray  # noqa: F811
+        import rioxarray
         
         # Create a geo-referenced raster
         cube = _make_raster()
