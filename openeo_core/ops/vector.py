@@ -122,9 +122,21 @@ def to_feature_matrix(
     X : np.ndarray  (n_samples, n_features)
     y : np.ndarray | None  (n_samples,)
     """
-    if isinstance(gdf, (xr.DataArray, xr.Dataset)) and _has_xvec_geometry(gdf):
+    # Convert supported xarray inputs (with xvec geometry) to GeoDataFrame
+    if isinstance(gdf, (xr.DataArray, xr.Dataset)):
+        if not _has_xvec_geometry(gdf):
+            raise TypeError(
+                "to_feature_matrix only supports xarray DataArray/Dataset inputs "
+                "that are backed by xvec geometry coordinates."
+            )
         gdf = gdf.xvec.to_geopandas()
 
+    # At this point we require a GeoDataFrame to proceed
+    if not isinstance(gdf, gpd.GeoDataFrame):
+        raise TypeError(
+            f"to_feature_matrix expects a GeoDataFrame or xvec-backed xarray input, "
+            f"got {type(gdf)!r}."
+        )
     if feature_columns is None:
         numeric = gdf.select_dtypes(include=[np.number])
         if target_column and target_column in numeric.columns:
