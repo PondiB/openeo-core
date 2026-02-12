@@ -240,7 +240,7 @@ class TestAggregateSpatial:
         
         # Check column naming: should have format "band_YYYY-MM"
         # For 2 bands (red, nir) and 2 time steps (2023-01, 2023-02)
-        # We expect 4 feature columns (order: red_2023-01, nir_2023-01, red_2023-02, nir_2023-02)
+        # We expect 4 feature columns (checking presence, not order)
         expected_cols = {"red_2023-01", "nir_2023-01", "red_2023-02", "nir_2023-02"}
         actual_feature_cols = {col for col in result.columns if col not in ["geometry", "id"]}
         assert expected_cols == actual_feature_cols, f"Expected {expected_cols} but got {actual_feature_cols}"
