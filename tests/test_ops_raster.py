@@ -168,9 +168,10 @@ class TestAggregateSpatial:
         # Check that geometry column exists
         assert result.geometry is not None
         
-        # Check that we have feature columns (bands x time)
-        # Expected columns: red_2023-01, red_2023-02, nir_2023-01, nir_2023-02
-        assert len(result.columns) >= 4  # At least 4 feature columns
+        # Check that we have exactly the expected columns:
+        # 4 feature columns (red_2023-01, nir_2023-01, red_2023-02, nir_2023-02)
+        # + 1 geometry column + 1 id column = 6 total
+        assert len(result.columns) == 6
         
         # Check that extra columns are preserved
         assert "id" in result.columns
