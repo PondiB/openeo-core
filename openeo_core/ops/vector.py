@@ -45,10 +45,25 @@ def filter_bbox(
         # geometries inside bbox (bbox.contains(geom))
         return data.xvec.query(coord_name, bbox, predicate="contains")
 
-    # GeoDataFrame / dask GeoDataFrame
-    mask = data.geometry.within(bbox)
-    return data.loc[mask].copy()
+    # xarray without xvec geometry: explicitly unsupported
+    if isinstance(data, (xr.DataArray, xr.Dataset)):
+        raise TypeError(
+            "filter_bbox only supports xarray DataArray/Dataset objects with xvec "
+            "geometry coordinates; got an xarray object without xvec geometry."
+        )
 
+    # GeoDataFrame / dask GeoDataFrame
+    if isinstance(data, gpd.GeoDataFrame) or (
+        dask_geopandas is not None
+        and isinstance(data, dask_geopandas.GeoDataFrame)
+    ):
+        mask = data.geometry.within(bbox)
+        return data.loc[mask].copy()
+
+    raise TypeError(
+        f"filter_bbox only supports GeoDataFrame, dask GeoDataFrame, or xarray "
+        f"DataArray/Dataset with xvec geometry; got {type(data)!r}."
+    )
 
 # ---------------------------------------------------------------------------
 # apply (vector – row-wise operation)
