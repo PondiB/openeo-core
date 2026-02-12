@@ -272,7 +272,8 @@ def aggregate_spatial(
         y_coords=y_dim,
         stats=stats,
     )
-    if hasattr(zonal, "compute"):
+    # Only trigger eager computation when zonal is chunked (e.g., dask-backed).
+    if getattr(zonal, "chunks", None):
         zonal = zonal.compute()
 
     # Flatten to (geometry, features) for ML: collapse time and bands into columns
