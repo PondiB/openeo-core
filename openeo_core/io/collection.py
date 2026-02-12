@@ -72,7 +72,9 @@ class AWSCollectionLoader:
         collection_id : str
             STAC collection identifier (e.g. ``"sentinel-2-l2a"``).
         spatial_extent : dict | None
-            Bounding box as ``{west, south, east, north}`` (WGS 84).
+            Bounding box as ``{west, south, east, north}``.  May include
+            an optional ``crs`` key (EPSG code as int, or WKT2 string).
+            Defaults to ``4326`` (WGS 84) when omitted.
         temporal_extent : tuple[str, str] | None
             ``(start_datetime, end_datetime)`` ISO-8601 strings.
         bands : list[str] | None
@@ -90,13 +92,27 @@ class AWSCollectionLoader:
             "max_items": kwargs.pop("max_items", 100),
         }
 
+        # Extract the optional CRS from spatial_extent (openEO spec default: 4326).
+        # Track whether the user explicitly provided a CRS so we can honour it
+        # even when it equals the default (4326).
+        extent_crs: int | str = 4326
+        user_specified_crs = False
+        if spatial_extent is not None and "crs" in spatial_extent:
+            extent_crs = spatial_extent["crs"]
+            user_specified_crs = True
+
         if spatial_extent is not None:
-            search_kwargs["bbox"] = [
+            bbox_coords = [
                 spatial_extent["west"],
                 spatial_extent["south"],
                 spatial_extent["east"],
                 spatial_extent["north"],
             ]
+            # pystac-client search always expects WGS 84 bbox
+            if _is_epsg_4326(extent_crs):
+                search_kwargs["bbox"] = bbox_coords
+            else:
+                search_kwargs["bbox"] = _reproject_bbox(bbox_coords, extent_crs, 4326)
 
         if temporal_extent is not None:
             search_kwargs["datetime"] = "/".join(temporal_extent)
@@ -117,21 +133,26 @@ class AWSCollectionLoader:
         if bands is not None:
             stack_kwargs["assets"] = bands
 
-        # Detect CRS from item properties (proj:code / proj:epsg).
-        # Earth Search v1 stores CRS per-asset, but items often carry
-        # proj:code at the properties level.  If items span multiple
-        # CRS zones we fall back to EPSG:4326 for a common grid.
-        detected_epsg = _detect_common_epsg(items)
-        stack_kwargs.setdefault("epsg", detected_epsg)
+        # Determine the output EPSG for stacking.
+        # If the user explicitly specified a CRS via spatial_extent, honour it
+        # (even when it's 4326); otherwise auto-detect from STAC item properties.
+        if user_specified_crs and isinstance(extent_crs, int):
+            stack_kwargs.setdefault("epsg", extent_crs)
+        else:
+            detected_epsg = _detect_common_epsg(items)
+            stack_kwargs.setdefault("epsg", detected_epsg)
 
         if spatial_extent is not None:
-            bounds = [
+            bbox_coords = [
                 spatial_extent["west"],
                 spatial_extent["south"],
                 spatial_extent["east"],
                 spatial_extent["north"],
             ]
-            stack_kwargs.setdefault("bounds_latlon", bounds)
+            if _is_epsg_4326(extent_crs):
+                stack_kwargs.setdefault("bounds_latlon", bbox_coords)
+            else:
+                stack_kwargs.setdefault("bounds", bbox_coords)
 
         stack_kwargs.update(kwargs)
 
@@ -191,6 +212,37 @@ def load_collection(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _is_epsg_4326(crs: int | str) -> bool:
+    """Return True if *crs* represents EPSG:4326 (WGS 84)."""
+    if isinstance(crs, int):
+        return crs == 4326
+    if isinstance(crs, str):
+        return crs.upper() in ("EPSG:4326", "4326")
+    return False
+
+
+def _reproject_bbox(
+    bbox: list[float],
+    src_crs: int | str,
+    dst_crs: int | str,
+) -> list[float]:
+    """Reproject a ``[west, south, east, north]`` bbox between CRS.
+
+    Uses pyproj's ``Transformer``.  Handles axis-order differences by
+    using the ``always_xy=True`` flag.
+    """
+    from pyproj import Transformer
+
+    src = f"EPSG:{src_crs}" if isinstance(src_crs, int) else src_crs
+    dst = f"EPSG:{dst_crs}" if isinstance(dst_crs, int) else dst_crs
+    transformer = Transformer.from_crs(src, dst, always_xy=True)
+
+    west, south, east, north = bbox
+    # Transform corners and take envelope
+    xs, ys = transformer.transform([west, east, west, east], [south, south, north, north])
+    return [min(xs), min(ys), max(xs), max(ys)]
 
 
 def _detect_common_epsg(items: list) -> int:

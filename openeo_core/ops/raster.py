@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
-
-if TYPE_CHECKING:
-    import geopandas
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -18,6 +15,7 @@ from openeo_core.exceptions import (
     NirBandAmbiguous,
     RedBandAmbiguous,
 )
+from openeo_core.types import RasterCube, VectorCube
 
 # ---------------------------------------------------------------------------
 # NDVI
@@ -25,13 +23,13 @@ from openeo_core.exceptions import (
 
 
 def ndvi(
-    data: xr.DataArray,
+    data: RasterCube,
     *,
     nir: str = "nir",
     red: str = "red",
     target_band: str | None = None,
     bands_dim: str = "bands",
-) -> xr.DataArray:
+) -> RasterCube:
     """Compute the Normalized Difference Vegetation Index.
 
     Implements the ``ndvi`` openEO process.  The formula is
@@ -39,7 +37,7 @@ def ndvi(
 
     Parameters
     ----------
-    data : xr.DataArray
+    data : RasterCube
         Raster cube with a dimension of type *bands* containing at least
         the *nir* and *red* bands.
     nir, red : str
@@ -135,7 +133,7 @@ def ndvi(
 
 
 def filter_bbox(
-    data: xr.DataArray,
+    data: RasterCube,
     *,
     west: float,
     south: float,
@@ -143,7 +141,7 @@ def filter_bbox(
     north: float,
     x_dim: str = "longitude",
     y_dim: str = "latitude",
-) -> xr.DataArray:
+) -> RasterCube:
     """Restrict a raster cube to a bounding box.
 
     Uses xarray label-based selection; assumes monotonic spatial coords.
@@ -164,11 +162,11 @@ def filter_bbox(
 
 
 def filter_temporal(
-    data: xr.DataArray,
+    data: RasterCube,
     *,
     extent: tuple[str, str],
     t_dim: str = "time",
-) -> xr.DataArray:
+) -> RasterCube:
     """Filter a raster cube to a temporal interval ``[start, end]``."""
     start, end = extent
     return data.sel({t_dim: slice(start, end)})
@@ -180,7 +178,7 @@ def filter_temporal(
 
 
 def aggregate_spatial(
-    data: xr.DataArray,
+    data: RasterCube,
     geometries: Any,
     *,
     reducer: str = "mean",
@@ -188,7 +186,7 @@ def aggregate_spatial(
     y_dim: str = "latitude",
     t_dim: str = "time",
     bands_dim: str = "bands",
-) -> xr.DataArray | "geopandas.GeoDataFrame":
+) -> RasterCube | VectorCube:
     """Aggregate raster values over spatial geometries.
 
     When *geometries* is provided, computes zonal statistics (one value per
@@ -199,7 +197,7 @@ def aggregate_spatial(
 
     Parameters
     ----------
-    data : xr.DataArray
+    data : RasterCube
         Raster cube.
     geometries : str | geopandas.GeoDataFrame | geopandas.GeoSeries | None
         Path to a GeoJSON file, or a GeoDataFrame/GeoSeries of polygons.
@@ -326,12 +324,12 @@ def aggregate_spatial(
 
 
 def aggregate_temporal(
-    data: xr.DataArray,
+    data: RasterCube,
     *,
     period: str = "month",
     reducer: str = "mean",
     t_dim: str = "time",
-) -> xr.DataArray:
+) -> RasterCube:
     """Aggregate raster values over calendar periods.
 
     Implements ``aggregate_temporal_period`` from the openEO process specs.
@@ -392,8 +390,8 @@ def aggregate_temporal(
 # -- temporal label helpers ---------------------------------------------------
 
 def _relabel_temporal(
-    data: xr.DataArray, period: str, t_dim: str
-) -> xr.DataArray:
+    data: RasterCube, period: str, t_dim: str
+) -> RasterCube:
     """Relabel the temporal dimension to match the openEO spec format."""
 
     coords = data.coords[t_dim].values
@@ -469,11 +467,11 @@ def _decade_ad_label(dt) -> str:
 
 
 def _aggregate_by_group(
-    data: xr.DataArray,
+    data: RasterCube,
     label_fn,
     reducer: str,
     t_dim: str,
-) -> xr.DataArray:
+) -> RasterCube:
     """Group by a custom label function and apply a reducer."""
 
     labels = [label_fn(t) for t in data.coords[t_dim].values]
@@ -491,7 +489,7 @@ def _aggregate_by_group(
 
 
 def resample_spatial(
-    data: xr.DataArray,
+    data: RasterCube,
     *,
     resolution: float | list[float] = 0,
     projection: int | str | None = None,
@@ -499,7 +497,7 @@ def resample_spatial(
     align: str = "upper-left",
     x_dim: str = "longitude",
     y_dim: str = "latitude",
-) -> xr.DataArray:
+) -> RasterCube:
     """Resample and/or reproject the spatial dimensions of a raster cube.
 
     Implements ``resample_spatial`` from the openEO process specs.
@@ -507,7 +505,7 @@ def resample_spatial(
 
     Parameters
     ----------
-    data : xr.DataArray
+    data : RasterCube
         Raster cube with spatial dimensions.
     resolution : float | list[float]
         Target resolution in units of *projection*.  A single number
@@ -616,7 +614,7 @@ def resample_spatial(
 
 
 def _resample_nd(
-    data: xr.DataArray,
+    data: RasterCube,
     extra_dims: list[str],
     x_dim: str,
     y_dim: str,
@@ -625,7 +623,7 @@ def _resample_nd(
     res_x: float,
     res_y: float,
     resampling,
-) -> xr.DataArray:
+) -> RasterCube:
     """Handle resample_spatial for arrays with >3 dimensions.
 
     Flattens extra non-spatial dims into a single dimension using
@@ -702,8 +700,8 @@ def _resample_nd(
 
 
 def _restore_spatial_dim_names(
-    data: xr.DataArray, x_dim: str, y_dim: str
-) -> xr.DataArray:
+    data: RasterCube, x_dim: str, y_dim: str
+) -> RasterCube:
     """Rename rioxarray's default ``y``/``x`` dims back to the caller's names."""
     rename: dict[str, str] = {}
     if x_dim != "x" and "x" in data.dims and x_dim not in data.dims:
@@ -721,18 +719,18 @@ def _restore_spatial_dim_names(
 
 
 def apply(
-    data: xr.DataArray,
+    data: RasterCube,
     process: Callable[..., Any],
     *,
     context: Any = None,
-) -> xr.DataArray:
+) -> RasterCube:
     """Apply a unary function to every value in the data cube.
 
     Uses :func:`xarray.apply_ufunc` so that the operation is dask-safe.
 
     Parameters
     ----------
-    data : xr.DataArray
+    data : RasterCube
         Input raster cube.
     process : callable
         Function ``f(x, context=...) -> x`` applied element-wise.
@@ -754,9 +752,9 @@ def apply(
 
 
 def stack_to_samples(
-    data: xr.DataArray,
+    data: RasterCube,
     feature_dim: str = "bands",
-) -> xr.DataArray:
+) -> RasterCube:
     """Stack all non-feature dims into a ``samples`` dim.
 
     Returns a 2-D DataArray with shape ``(samples, features)``.
@@ -767,10 +765,10 @@ def stack_to_samples(
 
 
 def unstack_from_samples(
-    result: xr.DataArray,
-    template: xr.DataArray,
+    result: RasterCube,
+    template: RasterCube,
     feature_dim: str = "bands",
-) -> xr.DataArray:
+) -> RasterCube:
     """Reverse :func:`stack_to_samples` using *template*'s multi-index."""
     non_feature = [d for d in template.dims if d != feature_dim]
     stacked_template = template.stack(samples=non_feature)

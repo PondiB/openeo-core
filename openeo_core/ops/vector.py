@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Union
+from typing import Any, Callable
 
 import geopandas as gpd
 import numpy as np
 import xarray as xr
+
+from openeo_core.types import VectorCube
 
 try:
     import dask_geopandas
@@ -20,13 +22,13 @@ except ImportError:  # pragma: no cover
 
 
 def filter_bbox(
-    data: Union[gpd.GeoDataFrame, xr.DataArray, xr.Dataset],
+    data: VectorCube,
     *,
     west: float,
     south: float,
     east: float,
     north: float,
-) -> Union[gpd.GeoDataFrame, xr.DataArray, xr.Dataset]:
+) -> VectorCube:
     """Keep geometries whose bounding box is fully inside the extent.
 
     Supports GeoDataFrame, dask GeoDataFrame, and xarray DataArray/Dataset
@@ -71,11 +73,11 @@ def filter_bbox(
 
 
 def apply(
-    data: Union[gpd.GeoDataFrame, xr.DataArray, xr.Dataset],
+    data: VectorCube,
     process: Callable[..., Any],
     *,
     context: Any = None,
-) -> Union[gpd.GeoDataFrame, xr.DataArray, xr.Dataset]:
+) -> VectorCube:
     """Apply a function to each row / partition of a vector cube.
 
     For GeoDataFrame / dask GeoDataFrame, applies directly.
@@ -98,7 +100,7 @@ def apply(
 
 
 def to_feature_matrix(
-    gdf: Union[gpd.GeoDataFrame, xr.DataArray, xr.Dataset],
+    gdf: VectorCube,
     *,
     feature_columns: list[str] | None = None,
     target_column: str | None = None,
@@ -109,7 +111,7 @@ def to_feature_matrix(
 
     Parameters
     ----------
-    gdf : GeoDataFrame | DataArray | Dataset
+    gdf : VectorCube
         Input vector cube.
     feature_columns : list[str] | None
         Columns to use as features.  If *None*, all numeric columns
