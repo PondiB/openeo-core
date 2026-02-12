@@ -8,7 +8,10 @@ from shapely.geometry import Point
 
 from openeo_core.ops.vector import filter_bbox, to_feature_matrix
 
-import xvec  # noqa: F401
+# Import xvec for its side effect of registering the `.xvec` accessor on xarray objects.
+import xvec
+# Explicitly reference xvec so static analysis tools see it as used.
+_ = xvec
 
 
 def _make_gdf() -> gpd.GeoDataFrame:
