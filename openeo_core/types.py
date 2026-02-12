@@ -19,8 +19,15 @@ except ImportError:  # pragma: no cover
 RasterCube = xr.DataArray
 """A raster data cube – always an xarray DataArray (numpy or dask-backed)."""
 
-VectorCube = Union[gpd.GeoDataFrame, "dask_geopandas.GeoDataFrame", xr.Dataset]
-"""A vector data cube – GeoDataFrame, dask GeoDataFrame, or xarray Dataset."""
+VectorCube = Union[
+    gpd.GeoDataFrame,
+    "dask_geopandas.GeoDataFrame",
+    xr.DataArray,
+    xr.Dataset,
+]
+"""A vector data cube – GeoDataFrame, dask GeoDataFrame, or xarray DataArray/Dataset
+with geometry coordinates (xvec format). xarray types require the ``xvec`` package
+and must have geometry-backed dimensions."""
 
 Cube = Union[RasterCube, VectorCube]
 """Any data cube type recognised by the library."""
