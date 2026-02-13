@@ -154,6 +154,9 @@ class MLModel:
         memory_size: int | None = None,
         accelerator: str | None = None,
         accelerator_constrained: bool = False,
+        # Spatial context (inferred from training data)
+        bbox: list[float] | None = None,
+        geometry: dict[str, Any] | None = None,
         # Internal
         estimator: Any = None,
         backend: str | None = None,
@@ -173,6 +176,10 @@ class MLModel:
         self.memory_size = memory_size
         self.accelerator = accelerator
         self.accelerator_constrained = accelerator_constrained
+
+        # -- spatial context --
+        self.bbox = bbox
+        self.geometry = geometry
 
         # -- internal --
         self._estimator = estimator
@@ -225,7 +232,12 @@ class MLModel:
         return props
 
     def to_stac_item(self, *, model_href: str = "model.pkl") -> dict[str, Any]:
-        """Build a minimal STAC Item dict conforming to the MLM extension."""
+        """Build a minimal STAC Item dict conforming to the MLM extension.
+
+        When spatial metadata (``bbox`` / ``geometry``) has been
+        attached (e.g. inferred from training data in ``ml_fit``), the
+        STAC Item will include those fields instead of ``null``.
+        """
         return {
             "type": "Feature",
             "stac_version": "1.1.0",
@@ -233,10 +245,9 @@ class MLModel:
                 "https://stac-extensions.github.io/mlm/v1.5.1/schema.json",
             ],
             "id": self.name,
-            "geometry": None,
-            "bbox": None,
+            "geometry": self.geometry,
+            "bbox": self.bbox,
             "properties": {
-                "datetime": None,
                 **self.to_stac_properties(),
             },
             "assets": {
@@ -256,6 +267,8 @@ class MLModel:
         *,
         estimator: Any = None,
         backend: str | None = None,
+        bbox: list[float] | None = None,
+        geometry: dict[str, Any] | None = None,
     ) -> "MLModel":
         """Reconstruct an ``MLModel`` from STAC Item ``properties``."""
         inputs = [ModelInput.from_dict(d) for d in properties.get("mlm:input", [])]
@@ -276,6 +289,8 @@ class MLModel:
             memory_size=properties.get("mlm:memory_size"),
             accelerator=properties.get("mlm:accelerator"),
             accelerator_constrained=properties.get("mlm:accelerator_constrained", False),
+            bbox=bbox,
+            geometry=geometry,
             estimator=estimator,
             backend=backend,
         )

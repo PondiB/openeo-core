@@ -79,7 +79,9 @@ class DataCube:
         adapter : CollectionLoader | None
             Custom loader.  Uses the default AWS Earth Search adapter when ``None``.
         spatial_extent : dict | None
-            Bounding box ``{west, south, east, north}``.
+            Bounding box ``{west, south, east, north}``.  May include an
+            optional ``crs`` key (EPSG code as int, or WKT2 string;
+            defaults to ``4326``).
         temporal_extent : tuple[str, str] | None
             Temporal range ``("start", "end")`` in ISO-8601.
         bands : list[str] | None
