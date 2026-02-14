@@ -8,35 +8,36 @@ license = { text = "Apache-2.0" }
 authors = [{ name = "Brian Pondi" }]
 
 dependencies = [
-    "numpy",
-    "xarray>=2024.2.0",
-    "dask[array,dataframe,distributed]",
-    "geopandas",
-    "dask-geopandas",
-    "xvec",
-    "pystac",
-    "pystac-client",
+    "numpy>=2.2.6",
+    "xarray>=2025.6.1",
+    "dask[array,dataframe,distributed]>=2026.1.2",
+    "geopandas>=1.1.2",
+    "dask-geopandas>=0.5.0",
+    "xvec>=0.5.2",
+    "pystac>=1.14.3",
+    "pystac-client>=0.9.0",
     "stackstac>=0.5.1",
-    "planetary-computer",
-    "shapely",
-    "pandas",
-    "joblib",
+    "planetary-computer>=1.0.0",
+    "shapely>=2.1.2",
+    "pandas>=2.3.3",
+    "joblib>=1.5.3",
+    "rioxarray>=0.19.0",
 ]
 
 [project.optional-dependencies]
-ml-sklearn = ["scikit-learn", "joblib"]
-ml-xgboost = ["xgboost"]
+ml-sklearn = ["scikit-learn>=1.7.2", "joblib>=1.5.3"]
+ml-xgboost = ["xgboost>=3.2.0"]
 ml-torch = ["torch"]
-geo = ["rioxarray"]
+geo = ["rioxarray>=0.19.0"]
 all = [
-    "scikit-learn",
-    "xgboost",
+    "scikit-learn>=1.7.2",
+    "xgboost>=3.2.0",
 ]
 dev = [
-    "pytest",
-    "pytest-cov",
-    "scikit-learn",
-    "xgboost",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "scikit-learn>=1.7.2",
+    "xgboost>=3.2.0",
 ]
 
 [build-system]

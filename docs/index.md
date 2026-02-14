@@ -5,6 +5,8 @@
 ## Documentation
 
 - **[Architecture](architecture.md)** — Software structure, design decisions, data flow, and component overview
+- **[Contributing](CONTRIBUTING.md)** — How to contribute to openeo-core
+- **[Issue Reporting](ISSUE_REPORTING.md)** — How to report bugs and request features
 
 ## External References
 
