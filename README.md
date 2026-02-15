@@ -17,9 +17,6 @@ pip install git+https://github.com/PondiB/openeo-core.git
 Optional extras (ML backends, geo tools, dev):
 
 ```bash
-# Geo tools (rioxarray for resample_spatial; xvec is a core dependency for vector/aggregate_spatial)
-uv pip install "openeo-core[geo] @ git+https://github.com/PondiB/openeo-core.git"
-
 # ML backends
 uv pip install "openeo-core[ml-sklearn,ml-xgboost] @ git+https://github.com/PondiB/openeo-core.git"
 
@@ -234,15 +231,15 @@ openeo_core/
 
 ### openEO ML Process Mapping
 
-| openEO Process | Python Function | Description |
-|---|---|---|
-| `mlm_class_random_forest` | `mlm_class_random_forest()` | Init RF classifier |
-| `mlm_regr_random_forest` | `mlm_regr_random_forest()` | Init RF regressor |
-| `mlm_class_xgboost` | `mlm_class_xgboost()` | Init XGBoost classifier |
-| `ml_fit` | `ml_fit(model, training_set, target)` | Train a model |
-| `ml_predict` | `ml_predict(data, model)` | Predict with trained model |
-| `save_ml_model` | `save_ml_model(data, name, options)` | Save model + STAC Item |
-| `load_stac_ml` | `load_stac_ml(uri, ...)` | Load model from STAC Item |
+| openEO Process            | Python Function                       | Description                |
+| ------------------------- | ------------------------------------- | -------------------------- |
+| `mlm_class_random_forest` | `mlm_class_random_forest()`           | Init RF classifier         |
+| `mlm_regr_random_forest`  | `mlm_regr_random_forest()`            | Init RF regressor          |
+| `mlm_class_xgboost`       | `mlm_class_xgboost()`                 | Init XGBoost classifier    |
+| `ml_fit`                  | `ml_fit(model, training_set, target)` | Train a model              |
+| `ml_predict`              | `ml_predict(data, model)`             | Predict with trained model |
+| `save_ml_model`           | `save_ml_model(data, name, options)`  | Save model + STAC Item     |
+| `load_stac_ml`            | `load_stac_ml(uri, ...)`              | Load model from STAC Item  |
 
 ## Running Tests
 

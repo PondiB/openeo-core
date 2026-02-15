@@ -6,14 +6,164 @@ from typing import Any, Callable
 
 import geopandas as gpd
 import numpy as np
+import pyproj
 import xarray as xr
 
+from openeo_core.exceptions import DimensionNotAvailable, UnitMismatch
 from openeo_core.types import VectorCube
 
 try:
     import dask_geopandas
 except ImportError:  # pragma: no cover
     dask_geopandas = None  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# vector_buffer
+# ---------------------------------------------------------------------------
+
+
+def vector_buffer(
+    geometries: VectorCube,
+    *,
+    distance: float,
+) -> VectorCube:
+    """Buffer each geometry by *distance* metres.
+
+    Implements the ``vector_buffer`` openEO process.  A positive *distance*
+    dilates (expands) geometries; a negative *distance* erodes (shrinks) them.
+    Results are always polygons.
+
+    Parameters
+    ----------
+    geometries : VectorCube
+        Input vector cube.  Feature properties are preserved.
+    distance : float
+        Buffer distance in the units of the geometry's CRS.  The CRS must
+        use metre-based units; otherwise a ``UnitMismatch`` exception is raised.
+
+    Raises
+    ------
+    UnitMismatch
+        If the CRS of the geometries is not metre-based (e.g. EPSG:4326 uses
+        degrees).  Use ``vector_reproject()`` first to convert to a projected CRS.
+    """
+    if distance == 0:
+        raise ValueError("distance must not be 0")
+
+    # --- xvec-backed xarray ---
+    if isinstance(geometries, (xr.DataArray, xr.Dataset)) and _has_xvec_geometry(geometries):
+        coord_name = _first_geom_coord_name(geometries)
+        if coord_name is None:
+            raise ValueError("xvec data has no geometry coordinate to buffer")
+        # Determine CRS from the xvec geometry index
+        crs = _xvec_crs(geometries, coord_name)
+        _assert_metre_crs(crs)
+        geom_values = geometries.coords[coord_name].values
+        buffered = [g.buffer(distance) if not g.is_empty else g for g in geom_values]
+        return geometries.assign_coords({coord_name: buffered})
+
+    # --- xarray without xvec ---
+    if isinstance(geometries, (xr.DataArray, xr.Dataset)):
+        raise TypeError(
+            "vector_buffer only supports xarray objects with xvec geometry coordinates."
+        )
+
+    # --- GeoDataFrame / dask GeoDataFrame ---
+    if isinstance(geometries, gpd.GeoDataFrame) or (
+        dask_geopandas is not None
+        and isinstance(geometries, dask_geopandas.GeoDataFrame)
+    ):
+        _assert_metre_crs(geometries.crs)
+        result = geometries.copy()
+        result["geometry"] = result.geometry.buffer(distance)
+        return result
+
+    raise TypeError(
+        f"vector_buffer expects a GeoDataFrame, dask GeoDataFrame, or xvec-backed "
+        f"xarray; got {type(geometries)!r}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# vector_reproject
+# ---------------------------------------------------------------------------
+
+
+def vector_reproject(
+    data: VectorCube,
+    *,
+    projection: int | str,
+    dimension: str | None = None,
+) -> VectorCube:
+    """Reproject geometries to a different coordinate reference system.
+
+    Implements the ``vector_reproject`` openEO process.
+
+    Parameters
+    ----------
+    data : VectorCube
+        Input vector cube.
+    projection : int | str
+        Target CRS as an EPSG code (int) or WKT2 string.
+    dimension : str | None
+        Name of the geometry dimension to reproject.  If ``None``, all
+        geometry dimensions are reprojected.
+
+    Raises
+    ------
+    DimensionNotAvailable
+        If the specified *dimension* does not exist.
+    """
+    target_crs = f"EPSG:{projection}" if isinstance(projection, int) else projection
+
+    # --- xvec-backed xarray ---
+    if isinstance(data, (xr.DataArray, xr.Dataset)) and _has_xvec_geometry(data):
+        if dimension is not None:
+            if dimension not in data.dims and dimension not in data.coords:
+                raise DimensionNotAvailable(
+                    f"A dimension with the specified name '{dimension}' does not exist."
+                )
+            coord_names = [dimension]
+        else:
+            coord_names = list(
+                data.xvec.geom_coords_indexed
+                if data.xvec.geom_coords_indexed
+                else data.xvec.geom_coords
+            )
+        for coord_name in coord_names:
+            src_crs = _xvec_crs(data, coord_name)
+            geom_values = data.coords[coord_name].values
+            transformer = pyproj.Transformer.from_crs(
+                src_crs, target_crs, always_xy=True
+            )
+            from shapely.ops import transform as shapely_transform
+
+            reprojected = [shapely_transform(transformer.transform, g) for g in geom_values]
+            data = data.assign_coords({coord_name: reprojected})
+        return data
+
+    # --- xarray without xvec ---
+    if isinstance(data, (xr.DataArray, xr.Dataset)):
+        raise TypeError(
+            "vector_reproject only supports xarray objects with xvec geometry coordinates."
+        )
+
+    # --- GeoDataFrame / dask GeoDataFrame ---
+    if isinstance(data, gpd.GeoDataFrame) or (
+        dask_geopandas is not None
+        and isinstance(data, dask_geopandas.GeoDataFrame)
+    ):
+        if dimension is not None and dimension != "geometry":
+            raise DimensionNotAvailable(
+                f"A dimension with the specified name '{dimension}' does not exist."
+            )
+        return data.to_crs(target_crs)
+
+    raise TypeError(
+        f"vector_reproject expects a GeoDataFrame, dask GeoDataFrame, or xvec-backed "
+        f"xarray; got {type(data)!r}."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -181,3 +331,33 @@ def _first_geom_coord_name(obj: xr.DataArray | xr.Dataset) -> str | None:
     except (AttributeError, StopIteration):
         pass
     return None
+
+
+def _xvec_crs(obj: xr.DataArray | xr.Dataset, coord_name: str) -> pyproj.CRS | None:
+    """Extract the CRS from an xvec geometry coordinate."""
+    try:
+        idx = obj.indexes[coord_name]
+        if hasattr(idx, "crs"):
+            return idx.crs
+    except (KeyError, AttributeError):
+        pass
+    return None
+
+
+def _assert_metre_crs(crs: Any) -> None:
+    """Raise ``UnitMismatch`` if *crs* is not metre-based."""
+    if crs is None:
+        raise UnitMismatch(
+            "The geometries have no CRS assigned.  Assign a metre-based CRS or "
+            "use vector_reproject() first."
+        )
+    resolved = pyproj.CRS(crs)
+    axis_info = resolved.axis_info
+    # Check whether the CRS uses metre-based units on any axis
+    units = {a.unit_name for a in axis_info}
+    if "metre" not in units and "meter" not in units:
+        raise UnitMismatch(
+            "The unit of the spatial reference system is not metres, but the "
+            "given distance is in metres.  Use vector_reproject() to convert "
+            "the geometries to a suitable spatial reference system."
+        )

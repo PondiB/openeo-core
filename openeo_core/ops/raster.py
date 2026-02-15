@@ -12,6 +12,8 @@ import xarray as xr
 from openeo_core.exceptions import (
     BandExists,
     DimensionAmbiguous,
+    DimensionNotAvailable,
+    KernelDimensionsUneven,
     NirBandAmbiguous,
     RedBandAmbiguous,
 )
@@ -774,3 +776,251 @@ def unstack_from_samples(
     stacked_template = template.stack(samples=non_feature)
     result = result.assign_coords(samples=stacked_template.coords["samples"])
     return result.unstack("samples")
+
+
+# ---------------------------------------------------------------------------
+# reduce_dimension
+# ---------------------------------------------------------------------------
+
+
+# Built-in reducer names mapped to numpy functions.
+_BUILTIN_REDUCERS: dict[str, Callable[..., Any]] = {
+    "mean": np.mean,
+    "average": np.mean,
+    "sum": np.sum,
+    "min": np.min,
+    "max": np.max,
+    "median": np.median,
+    "std": np.std,
+    "var": np.var,
+    "prod": np.prod,
+    "any": np.any,
+    "all": np.all,
+    "count": lambda x, axis=None: np.sum(np.isfinite(x), axis=axis),
+}
+
+
+def _resolve_reducer(reducer: str | Callable[..., Any]) -> Callable[..., Any]:
+    """Resolve *reducer* to a callable.
+
+    Accepts:
+    * A callable – returned as-is.
+    * A built-in name (``"mean"``, ``"sum"``, …) – looked up from the map.
+    * A dotted Python path (e.g. ``"numpy.nanmean"``) – imported dynamically.
+
+    Raises
+    ------
+    ValueError
+        If the string cannot be resolved to a callable.
+    """
+    if callable(reducer):
+        return reducer
+
+    if not isinstance(reducer, str):
+        raise TypeError(
+            f"reducer must be a callable or a string, got {type(reducer)!r}"
+        )
+
+    # Try built-in name first
+    builtin = _BUILTIN_REDUCERS.get(reducer)
+    if builtin is not None:
+        return builtin
+
+    # Try dotted import path (e.g. "numpy.nanmean", "scipy.stats.gmean")
+    if "." in reducer:
+        parts = reducer.rsplit(".", 1)
+        if len(parts) == 2:
+            module_path, func_name = parts
+            try:
+                import importlib
+
+                mod = importlib.import_module(module_path)
+                func = getattr(mod, func_name, None)
+                if func is not None and callable(func):
+                    return func
+            except (ImportError, ModuleNotFoundError):
+                pass
+
+    raise ValueError(
+        f"Unknown reducer {reducer!r}. Use a callable, a built-in name "
+        f"({', '.join(sorted(_BUILTIN_REDUCERS))}), or a dotted Python "
+        f"path like 'numpy.nanmean'."
+    )
+
+
+def reduce_dimension(
+    data: RasterCube,
+    reducer: str | Callable[..., Any],
+    *,
+    dimension: str,
+    context: Any = None,
+) -> RasterCube:
+    """Collapse a dimension by applying a reducer function.
+
+    Implements the ``reduce_dimension`` openEO process.  The *reducer*
+    receives a 1-D array of values along *dimension* for each pixel and
+    must return a single scalar value.  The specified dimension is dropped
+    from the result.
+
+    Parameters
+    ----------
+    data : RasterCube
+        Input raster cube.
+    reducer : str | callable
+        Either a string name or a callable.
+
+        **String names** – built-in reducers mapped to numpy functions:
+        ``"mean"``, ``"sum"``, ``"min"``, ``"max"``, ``"median"``,
+        ``"std"``, ``"var"``, ``"prod"``, ``"any"``, ``"all"``,
+        ``"count"`` (counts finite values), ``"average"`` (alias for mean).
+
+        **Dotted Python path** – any importable function, e.g.
+        ``"numpy.nanmean"`` or ``"numpy.nansum"``.
+
+        **Callable** – a function ``f(values, axis=...) -> array``
+        applied along *dimension*.
+    dimension : str
+        Name of the dimension to reduce over.
+    context
+        Optional extra data forwarded to *reducer* (only when *reducer*
+        is a callable that accepts a ``context`` keyword argument).
+
+    Raises
+    ------
+    DimensionNotAvailable
+        If the specified *dimension* does not exist.
+    ValueError
+        If a string *reducer* cannot be resolved to a callable.
+    """
+    if dimension not in data.dims:
+        raise DimensionNotAvailable(
+            f"A dimension with the specified name '{dimension}' does not exist. "
+            f"Available dimensions: {list(data.dims)}"
+        )
+
+    reduce_fn = _resolve_reducer(reducer)
+
+    if context is not None:
+        # Wrap the reducer to accept `axis` and forward context
+        def _wrapper(values: np.ndarray, axis: int | None = None) -> np.ndarray:
+            return reduce_fn(values, axis=axis, context=context)
+
+        result = data.reduce(_wrapper, dim=dimension)
+    else:
+        result = data.reduce(reduce_fn, dim=dimension)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# apply_kernel
+# ---------------------------------------------------------------------------
+
+# Map openEO border mode names to scipy.ndimage mode names
+_BORDER_MODE_MAP: dict[str, str] = {
+    "replicate": "nearest",
+    "reflect": "reflect",
+    "reflect_pixel": "mirror",
+    "wrap": "wrap",
+}
+
+
+def apply_kernel(
+    data: RasterCube,
+    *,
+    kernel: list[list[float]],
+    factor: float = 1.0,
+    border: float | str = 0,
+    replace_invalid: float = 0.0,
+    x_dim: str = "longitude",
+    y_dim: str = "latitude",
+) -> RasterCube:
+    """Apply a 2-D spatial convolution kernel to a raster cube.
+
+    Implements the ``apply_kernel`` openEO process.  The kernel is applied
+    to the ``(y, x)`` spatial dimensions of each slice independently.
+
+    Parameters
+    ----------
+    data : RasterCube
+        Raster cube with spatial dimensions.
+    kernel : list[list[float]]
+        2-D array of convolution weights.  Each dimension must have an
+        uneven (odd) number of elements.
+    factor : float
+        Multiplicative factor applied to each convolved value (default 1).
+    border : float | str
+        How to handle borders.  A numeric value fills borders with that
+        constant; string values ``"replicate"``, ``"reflect"``,
+        ``"reflect_pixel"``, or ``"wrap"`` use the corresponding strategy.
+    replace_invalid : float
+        Value to substitute for NaN / Inf / non-numeric entries before
+        convolution (default 0).
+    x_dim, y_dim : str
+        Names of the spatial dimensions.
+
+    Raises
+    ------
+    KernelDimensionsUneven
+        If either kernel dimension has an even number of elements.
+    DimensionNotAvailable
+        If the spatial dimensions are not found.
+    """
+    from scipy.ndimage import convolve
+
+    kernel_arr = np.asarray(kernel, dtype=np.float64)
+
+    # Validate kernel dimensions are odd
+    if kernel_arr.ndim != 2:
+        raise KernelDimensionsUneven(
+            "The kernel must be a two-dimensional array."
+        )
+    if kernel_arr.shape[0] % 2 == 0 or kernel_arr.shape[1] % 2 == 0:
+        raise KernelDimensionsUneven(
+            "Each dimension of the kernel must have an uneven number of elements."
+        )
+
+    # Validate spatial dimensions exist
+    for dim in (y_dim, x_dim):
+        if dim not in data.dims:
+            raise DimensionNotAvailable(
+                f"A dimension with the specified name '{dim}' does not exist. "
+                f"Available dimensions: {list(data.dims)}"
+            )
+
+    # Resolve border mode for scipy.ndimage.convolve
+    if isinstance(border, str):
+        scipy_mode = _BORDER_MODE_MAP.get(border)
+        if scipy_mode is None:
+            raise ValueError(
+                f"Unknown border mode {border!r}. Choose from: "
+                f"{list(_BORDER_MODE_MAP)} or a numeric constant."
+            )
+        cval = 0.0
+    else:
+        scipy_mode = "constant"
+        cval = float(border)
+
+    def _convolve_slice(arr: np.ndarray) -> np.ndarray:
+        """Convolve a single 2-D spatial slice."""
+        # Replace invalid values
+        arr = np.where(np.isfinite(arr), arr, replace_invalid)
+        # Apply convolution and multiply by factor
+        return convolve(arr, kernel_arr, mode=scipy_mode, cval=cval) * factor
+
+    # Determine the axes for the spatial dims
+    spatial_dims = [y_dim, x_dim]
+
+    # Use apply_ufunc with vectorize=True so that _convolve_slice
+    # receives individual 2-D (y, x) slices rather than the full N-D array.
+    result = xr.apply_ufunc(
+        _convolve_slice,
+        data,
+        input_core_dims=[spatial_dims],
+        output_core_dims=[spatial_dims],
+        vectorize=True,
+        dask="parallelized",
+        output_dtypes=[data.dtype],
+    )
+
+    return result
