@@ -353,7 +353,7 @@ def _assert_metre_crs(crs: Any) -> None:
         )
     resolved = pyproj.CRS(crs)
     axis_info = resolved.axis_info
-    # Check whether the first axis uses metre as its unit
+    # Check whether the CRS uses metre-based units on any axis
     units = {a.unit_name for a in axis_info}
     if "metre" not in units and "meter" not in units:
         raise UnitMismatch(
