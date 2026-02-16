@@ -11,6 +11,7 @@ which uses the **planetary-computer** package for SAS token signing.
 
 from __future__ import annotations
 
+from abc import ABC
 from typing import Any, Protocol, runtime_checkable
 
 import xarray as xr
@@ -48,21 +49,27 @@ class CollectionLoader(Protocol):
 # ---------------------------------------------------------------------------
 
 
-class BaseCollectionLoader:
+class BaseCollectionLoader(ABC):
     """Base class for STAC collection loaders with shared logic.
 
-    Subclasses should override ``_open_catalog`` if they need custom
-    catalog initialization (e.g., with authentication modifiers).
+    This is an abstract base class. Subclasses must define ``DEFAULT_API_URL``
+    and may override ``_open_catalog`` if they need custom catalog
+    initialization (e.g., with authentication modifiers).
 
     Parameters
     ----------
-    api_url : str
-        STAC API endpoint.
+    api_url : str, optional
+        STAC API endpoint. If not provided, uses the subclass's
+        ``DEFAULT_API_URL``.
     """
 
     DEFAULT_API_URL: str = ""
 
     def __init__(self, api_url: str | None = None) -> None:
+        if not hasattr(self.__class__, 'DEFAULT_API_URL') or not self.__class__.DEFAULT_API_URL:
+            raise ValueError(
+                f"{self.__class__.__name__} must define a non-empty DEFAULT_API_URL"
+            )
         self.api_url = api_url or self.DEFAULT_API_URL
 
     def _open_catalog(self) -> pystac_client.Client:
@@ -206,9 +213,12 @@ class AWSCollectionLoader(BaseCollectionLoader):
     This is a convenience default; users can inject any
     :class:`CollectionLoader`-compatible adapter.
 
+    Inherits the initialization and load_collection behavior from
+    :class:`BaseCollectionLoader`.
+
     Parameters
     ----------
-    api_url : str
+    api_url : str, optional
         STAC API endpoint. Defaults to Earth Search v1.
     """
 
@@ -227,11 +237,15 @@ class MicrosoftPlanetaryComputerLoader(BaseCollectionLoader):
     is handled transparently by the **planetary-computer** package
     (``pip install planetary-computer``).
 
+    Inherits the initialization and load_collection behavior from
+    :class:`BaseCollectionLoader`, and overrides ``_open_catalog`` to add
+    SAS token signing.
+
     See https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/
 
     Parameters
     ----------
-    api_url : str
+    api_url : str, optional
         STAC API endpoint.  Defaults to the Planetary Computer v1 API.
     """
 
