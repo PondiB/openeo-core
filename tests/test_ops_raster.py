@@ -520,7 +520,7 @@ class TestArrayInterpolateLinear:
         """Leading and trailing NaN/None must not be filled."""
         data = [None, None, 2, None, 8, None, None]
         result = array_interpolate_linear(data)
-        assert result == [None, None, 2, 5.0, 8, None, None]
+        assert result == [None, None, 2, 5, 8, None, None]
 
     def test_multiple_interior_gaps(self):
         """Multiple consecutive interior nulls are interpolated correctly."""
