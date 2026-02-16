@@ -15,12 +15,6 @@ from typing import Any, Protocol, runtime_checkable
 
 import xarray as xr
 
-import planetary_computer
-
-import pystac_client
-        
-import stackstac
-
 # ---------------------------------------------------------------------------
 # Protocol
 # ---------------------------------------------------------------------------
@@ -92,6 +86,8 @@ class AWSCollectionLoader:
         properties : dict | None
             Extra STAC query parameters (e.g. cloud cover filter).
         """
+        import pystac_client
+        import stackstac
 
         catalog = pystac_client.Client.open(self.api_url)
 
@@ -235,6 +231,9 @@ class MicrosoftPlanetaryComputerLoader:
         properties : dict | None
             Extra STAC query parameters (e.g. cloud cover filter).
         """
+        import planetary_computer
+        import pystac_client
+        import stackstac
 
         catalog = pystac_client.Client.open(
             self.api_url,
