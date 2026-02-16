@@ -3,13 +3,21 @@
 The default implementation uses **pystac-client** to search the
 `Earth Search <https://earth-search.aws.element84.com/v1>`_ STAC API
 (Sentinel-2 L2A on AWS) and **stackstac** to build a lazy xarray DataArray.
+
+A Microsoft `Planetary Computer <https://planetarycomputer.microsoft.com/>`_
+loader is also provided, which uses the **planetary-computer** package for
+SAS token signing.
 """
 
 from __future__ import annotations
 
+from abc import ABC
 from typing import Any, Protocol, runtime_checkable
 
 import xarray as xr
+import planetary_computer
+import pystac_client
+import stackstac
 
 # ---------------------------------------------------------------------------
 # Protocol
@@ -34,26 +42,45 @@ class CollectionLoader(Protocol):
 
 
 # ---------------------------------------------------------------------------
-# Default implementation – AWS Earth Search via pystac-client + stackstac
+# Base implementation with shared logic
 # ---------------------------------------------------------------------------
 
 
-class AWSCollectionLoader:
-    """Load collections from the Element 84 Earth Search STAC API on AWS.
+class BaseCollectionLoader(ABC):
+    """Base class for STAC collection loaders with shared logic.
 
-    This is a convenience default; users can inject any
-    :class:`CollectionLoader`-compatible adapter.
+    This is an abstract base class. Subclasses must define ``DEFAULT_API_URL``
+    and may override ``_open_catalog`` if they need custom catalog
+    initialization (e.g., with authentication modifiers).
 
     Parameters
     ----------
-    api_url : str
-        STAC API endpoint. Defaults to Earth Search v1.
+    api_url : str, optional
+        STAC API endpoint. If not provided, uses the subclass's
+        ``DEFAULT_API_URL``.
     """
 
-    DEFAULT_API_URL = "https://earth-search.aws.element84.com/v1"
+    DEFAULT_API_URL: str = ""
 
     def __init__(self, api_url: str | None = None) -> None:
+        if not hasattr(self.__class__, 'DEFAULT_API_URL') or not self.__class__.DEFAULT_API_URL:
+            raise ValueError(
+                f"{self.__class__.__name__} must define a non-empty DEFAULT_API_URL"
+            )
         self.api_url = api_url or self.DEFAULT_API_URL
+
+    def _open_catalog(self) -> pystac_client.Client:
+        """Open the STAC catalog client.
+
+        Subclasses can override this method to customize catalog initialization,
+        for example by adding authentication or signing modifiers.
+
+        Returns
+        -------
+        pystac_client.Client
+            The opened STAC catalog client.
+        """
+        return pystac_client.Client.open(self.api_url)
 
     def load_collection(
         self,
@@ -82,10 +109,8 @@ class AWSCollectionLoader:
         properties : dict | None
             Extra STAC query parameters (e.g. cloud cover filter).
         """
-        import pystac_client
-        import stackstac
 
-        catalog = pystac_client.Client.open(self.api_url)
+        catalog = self._open_catalog()
 
         search_kwargs: dict[str, Any] = {
             "collections": [collection_id],
@@ -172,6 +197,69 @@ class AWSCollectionLoader:
             da = da.rename(rename_map)
 
         return da
+
+
+# ---------------------------------------------------------------------------
+# Default implementation – AWS Earth Search via pystac-client + stackstac
+# ---------------------------------------------------------------------------
+
+
+class AWSCollectionLoader(BaseCollectionLoader):
+    """Load collections from the Element 84 Earth Search STAC API on AWS.
+
+    This is a convenience default; users can inject any
+    :class:`CollectionLoader`-compatible adapter.
+
+    Inherits the initialization and load_collection behavior from
+    :class:`BaseCollectionLoader`.
+
+    Parameters
+    ----------
+    api_url : str, optional
+        STAC API endpoint. Defaults to Earth Search v1.
+    """
+
+    DEFAULT_API_URL = "https://earth-search.aws.element84.com/v1"
+
+
+# ---------------------------------------------------------------------------
+# Microsoft Planetary Computer via pystac-client + stackstac
+# ---------------------------------------------------------------------------
+
+
+class MicrosoftPlanetaryComputerLoader(BaseCollectionLoader):
+    """Load collections from the Microsoft Planetary Computer STAC API.
+
+    Assets hosted on Azure Blob Storage require SAS-token signing which
+    is handled transparently by the **planetary-computer** package
+    (``pip install planetary-computer``).
+
+    Inherits the initialization and load_collection behavior from
+    :class:`BaseCollectionLoader`, and overrides ``_open_catalog`` to add
+    SAS token signing.
+
+    See https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/
+
+    Parameters
+    ----------
+    api_url : str, optional
+        STAC API endpoint.  Defaults to the Planetary Computer v1 API.
+    """
+
+    DEFAULT_API_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
+
+    def _open_catalog(self) -> pystac_client.Client:
+        """Open the Planetary Computer STAC catalog with SAS token signing.
+
+        Returns
+        -------
+        pystac_client.Client
+            The opened STAC catalog client with planetary_computer modifier.
+        """
+        return pystac_client.Client.open(
+            self.api_url,
+            modifier=planetary_computer.sign_inplace,
+        )
 
 
 # ---------------------------------------------------------------------------
