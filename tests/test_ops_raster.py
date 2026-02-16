@@ -16,6 +16,7 @@ from openeo_core.ops.raster import (
     aggregate_spatial,
     aggregate_temporal,
     apply,
+    array_interpolate_linear,
     filter_bbox,
     filter_temporal,
     ndvi,
@@ -462,6 +463,139 @@ class TestApply:
 # ---------------------------------------------------------------
 # stack / unstack utilities
 # ---------------------------------------------------------------
+
+
+# ---------------------------------------------------------------
+# array_interpolate_linear
+# ---------------------------------------------------------------
+
+
+class TestArrayInterpolateLinear:
+    """Tests for the array_interpolate_linear openEO process."""
+
+    # -- Plain list tests (from the openEO spec examples) --
+
+    def test_spec_example_1(self):
+        """Spec example: interior nulls are interpolated, leading null preserved."""
+        data = [None, 1, None, 6, None, -8]
+        result = array_interpolate_linear(data)
+        assert result == [None, 1, 3.5, 6, -1, -8]
+
+    def test_spec_example_2(self):
+        """Spec example: only 1 valid value → nothing to interpolate."""
+        data = [None, 1, None, None]
+        result = array_interpolate_linear(data)
+        assert result == [None, 1, None, None]
+
+    def test_all_none(self):
+        """All None values → returned unchanged."""
+        data = [None, None, None]
+        result = array_interpolate_linear(data)
+        assert result == [None, None, None]
+
+    def test_no_gaps(self):
+        """No NaN / None gaps → returned unchanged."""
+        data = [1, 2, 3, 4]
+        result = array_interpolate_linear(data)
+        assert result == [1, 2, 3, 4]
+
+    def test_single_value(self):
+        """Single value array → returned unchanged."""
+        data = [5]
+        result = array_interpolate_linear(data)
+        assert result == [5]
+
+    def test_empty_list(self):
+        """Empty list → returned unchanged."""
+        result = array_interpolate_linear([])
+        assert result == []
+
+    def test_two_values_with_gap(self):
+        """Two valid values with a gap in between."""
+        data = [0, None, 10]
+        result = array_interpolate_linear(data)
+        assert result == [0, 5.0, 10]
+
+    def test_leading_trailing_preserved(self):
+        """Leading and trailing NaN/None must not be filled."""
+        data = [None, None, 2, None, 8, None, None]
+        result = array_interpolate_linear(data)
+        assert result == [None, None, 2, 5, 8, None, None]
+
+    def test_multiple_interior_gaps(self):
+        """Multiple consecutive interior nulls are interpolated correctly."""
+        data = [0, None, None, None, 4]
+        result = array_interpolate_linear(data)
+        assert result == [0, 1, 2, 3, 4]
+
+    # -- RasterCube (xarray DataArray) tests --
+
+    def test_raster_interpolate_time(self):
+        """Interpolate NaN values along the time dimension of a raster cube."""
+        data = np.array([1.0, np.nan, 3.0, np.nan, 5.0])
+        da_cube = xr.DataArray(data, dims=["time"])
+        result = array_interpolate_linear(da_cube, dimension="time")
+        expected = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        np.testing.assert_allclose(result.values, expected)
+
+    def test_raster_leading_trailing_nan_preserved(self):
+        """Leading / trailing NaN along the interpolation dim stay NaN."""
+        data = np.array([np.nan, 2.0, np.nan, 8.0, np.nan])
+        da_cube = xr.DataArray(data, dims=["time"])
+        result = array_interpolate_linear(da_cube, dimension="time")
+        assert np.isnan(result.values[0]), "Leading NaN should be preserved"
+        assert np.isnan(result.values[-1]), "Trailing NaN should be preserved"
+        np.testing.assert_allclose(result.values[1:4], [2.0, 5.0, 8.0])
+
+    def test_raster_4d_cube(self):
+        """Interpolation on a full 4-D raster cube along time."""
+        np.random.seed(42)
+        data = np.random.rand(5, 2, 3, 3).astype(np.float32)
+        # Punch some NaN holes at time indices 1 and 3
+        data[1, :, :, :] = np.nan
+        data[3, :, :, :] = np.nan
+        da_cube = xr.DataArray(
+            data,
+            dims=["time", "bands", "latitude", "longitude"],
+            coords={
+                "time": pd.date_range("2023-01-01", periods=5, freq="ME"),
+                "bands": ["red", "nir"],
+                "latitude": np.linspace(50, 51, 3),
+                "longitude": np.linspace(10, 11, 3),
+            },
+        )
+        result = array_interpolate_linear(da_cube, dimension="time")
+        # All interior NaN should be filled
+        assert not np.isnan(result.values[1]).any()
+        assert not np.isnan(result.values[3]).any()
+        # Shape must be preserved
+        assert result.shape == da_cube.shape
+
+    def test_raster_string_coord_dimension(self):
+        """Interpolation along a string-labeled dimension (e.g. bands) must not raise."""
+        data = np.array([[1.0, np.nan, 3.0], [np.nan, 5.0, np.nan]])
+        da_cube = xr.DataArray(
+            data,
+            dims=["bands", "x"],
+            coords={"bands": ["red", "nir"]},
+        )
+        result = array_interpolate_linear(da_cube, dimension="x")
+        # Interior NaN at [0, 1] should be interpolated to 2.0
+        np.testing.assert_allclose(result.values[0], [1.0, 2.0, 3.0])
+
+    def test_raster_missing_dimension_raises(self):
+        """Passing a non-existent dimension should raise DimensionNotAvailable."""
+        from openeo_core.exceptions import DimensionNotAvailable
+
+        da_cube = xr.DataArray([1.0, 2.0], dims=["time"])
+        with pytest.raises(DimensionNotAvailable, match="does not exist"):
+            array_interpolate_linear(da_cube, dimension="bands")
+
+    def test_raster_no_dimension_raises(self):
+        """Omitting dimension for a DataArray should raise ValueError."""
+        da_cube = xr.DataArray([1.0, 2.0], dims=["time"])
+        with pytest.raises(ValueError, match="dimension must be specified"):
+            array_interpolate_linear(da_cube)
 
 
 class TestStackUnstack:

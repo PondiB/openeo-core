@@ -387,6 +387,31 @@ class DataCube:
             )
         )
 
+    def array_interpolate_linear(
+        self,
+        *,
+        dimension: str | None = None,
+    ) -> "DataCube":
+        """One-dimensional linear interpolation over NaN / no-data values.
+
+        Fills interior NaN / no-data gaps using linear interpolation along
+        *dimension*, leaving leading and trailing NaN values untouched.
+
+        Implements the ``array_interpolate_linear`` openEO process.
+
+        Parameters
+        ----------
+        dimension : str | None
+            Dimension along which to interpolate (e.g. ``"time"``).
+            Required for raster cubes.
+        """
+        self._assert_raster("array_interpolate_linear")
+        from openeo_core.ops.raster import array_interpolate_linear as _ail
+
+        return DataCube(
+            _ail(self._data, dimension=dimension)  # type: ignore[arg-type]
+        )
+
     # ------------------------------------------------------------------
     # Vector operations
     # ------------------------------------------------------------------

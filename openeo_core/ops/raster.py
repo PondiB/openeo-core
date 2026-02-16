@@ -720,6 +720,124 @@ def _restore_spatial_dim_names(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# array_interpolate_linear
+# ---------------------------------------------------------------------------
+
+
+def array_interpolate_linear(
+    data: list | RasterCube,
+    *,
+    dimension: str | None = None,
+) -> list | RasterCube:
+    """One-dimensional linear interpolation for arrays.
+
+    Performs linear interpolation for each NaN / no-data (``None``) value in
+    *data*, **except** for leading and trailing NaN / no-data values which
+    are left untouched.  If fewer than 2 numerical (non-NaN) values exist,
+    the data is returned unchanged.
+
+    Implements the ``array_interpolate_linear`` openEO process.
+
+    Parameters
+    ----------
+    data : list | RasterCube
+        Either a plain Python list of numbers / ``None`` values, or an
+        xarray ``DataArray`` (raster cube).  When a ``DataArray`` is given,
+        interpolation is applied along *dimension*.
+    dimension : str | None
+        Dimension along which to interpolate when *data* is a ``DataArray``.
+        Required for raster cubes; ignored for plain lists.
+
+    Returns
+    -------
+    list | RasterCube
+        The interpolated result in the same type as the input.
+
+    Raises
+    ------
+    DimensionNotAvailable
+        If *dimension* does not exist on a raster cube input.
+    ValueError
+        If *data* is a ``DataArray`` but *dimension* is not specified.
+
+    Examples
+    --------
+    >>> array_interpolate_linear([None, 1, None, 6, None, -8])
+    [None, 1, 3.5, 6, -1, -8]
+    >>> array_interpolate_linear([None, 1, None, None])
+    [None, 1, None, None]
+    """
+    if isinstance(data, list):
+        return _interpolate_linear_array(data)
+
+    # --- RasterCube path ---
+    if dimension is None:
+        raise ValueError(
+            "dimension must be specified when data is a DataArray."
+        )
+    if dimension not in data.dims:
+        raise DimensionNotAvailable(
+            f"A dimension with the specified name '{dimension}' does not "
+            f"exist. Available dimensions: {list(data.dims)}"
+        )
+
+    # Determine whether to use coordinate values or plain integer indices.
+    # xarray's interpolate_na requires a monotonically increasing numeric
+    # index.  Temporal and numeric coords satisfy this naturally, but string
+    # coords (e.g. band names) do not — fall back to positional indices.
+    coord = data.coords[dimension]
+    use_coordinate: bool = np.issubdtype(coord.dtype, np.number) or np.issubdtype(
+        coord.dtype, np.datetime64
+    )
+
+    return data.interpolate_na(dim=dimension, method="linear", use_coordinate=use_coordinate)
+
+
+def _interpolate_linear_array(data: list) -> list:
+    """Linear interpolation on a plain Python list, preserving leading/trailing nulls."""
+    arr = np.array(
+        [np.nan if v is None else float(v) for v in data],
+        dtype=np.float64,
+    )
+
+    valid_mask = np.isfinite(arr)
+    valid_indices = np.where(valid_mask)[0]
+
+    # Fewer than 2 valid values → nothing to interpolate
+    if len(valid_indices) < 2:
+        return list(data)
+
+    first_valid = valid_indices[0]
+    last_valid = valid_indices[-1]
+
+    # Interpolate only the interior (between first and last valid values)
+    interior = slice(first_valid, last_valid + 1)
+    x_all = np.arange(len(arr))
+    arr[interior] = np.interp(
+        x_all[interior],
+        x_all[valid_mask],
+        arr[valid_mask],
+    )
+
+    # Rebuild the output list: keep original None for leading/trailing,
+    # return interpolated float values for the interior.
+    result: list = []
+    for i, original in enumerate(data):
+        if i < first_valid or i > last_valid:
+            result.append(original)
+        else:
+            val = arr[i]
+            # Preserve exact int values where the interpolation yields a whole number
+            result.append(int(val) if val == int(val) else float(val))
+    return result
+
+
+# ---------------------------------------------------------------------------
+# apply (generic per-element operation)
+# ---------------------------------------------------------------------------
+
+
 def apply(
     data: RasterCube,
     process: Callable[..., Any],
