@@ -362,7 +362,9 @@ def _is_epsg_4326(crs: int | str) -> bool:
     """Return True if *crs* represents EPSG:4326 (WGS 84)."""
     if isinstance(crs, int):
         return crs == 4326
-    return crs.upper() in ("EPSG:4326", "4326")
+    if isinstance(crs, str):
+        return crs.upper() in ("EPSG:4326", "4326")
+    return False
 
 
 def _reproject_bbox(
