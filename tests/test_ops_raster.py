@@ -479,7 +479,7 @@ class TestArrayInterpolateLinear:
         """Spec example: interior nulls are interpolated, leading null preserved."""
         data = [None, 1, None, 6, None, -8]
         result = array_interpolate_linear(data)
-        assert result == [None, 1, 3.5, 6, -1.0, -8]
+        assert result == [None, 1, 3.5, 6, -1, -8]
 
     def test_spec_example_2(self):
         """Spec example: only 1 valid value → nothing to interpolate."""
