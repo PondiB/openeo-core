@@ -526,7 +526,7 @@ class TestArrayInterpolateLinear:
         """Multiple consecutive interior nulls are interpolated correctly."""
         data = [0, None, None, None, 4]
         result = array_interpolate_linear(data)
-        assert result == [0, 1.0, 2.0, 3.0, 4]
+        assert result == [0, 1, 2, 3, 4]
 
     # -- RasterCube (xarray DataArray) tests --
 
