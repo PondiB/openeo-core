@@ -44,26 +44,39 @@ class CollectionLoader(Protocol):
 
 
 # ---------------------------------------------------------------------------
-# Default implementation – AWS Earth Search via pystac-client + stackstac
+# Base implementation with shared logic
 # ---------------------------------------------------------------------------
 
 
-class AWSCollectionLoader:
-    """Load collections from the Element 84 Earth Search STAC API on AWS.
+class BaseCollectionLoader:
+    """Base class for STAC collection loaders with shared logic.
 
-    This is a convenience default; users can inject any
-    :class:`CollectionLoader`-compatible adapter.
+    Subclasses should override ``_open_catalog`` if they need custom
+    catalog initialization (e.g., with authentication modifiers).
 
     Parameters
     ----------
     api_url : str
-        STAC API endpoint. Defaults to Earth Search v1.
+        STAC API endpoint.
     """
 
-    DEFAULT_API_URL = "https://earth-search.aws.element84.com/v1"
+    DEFAULT_API_URL: str = ""
 
     def __init__(self, api_url: str | None = None) -> None:
         self.api_url = api_url or self.DEFAULT_API_URL
+
+    def _open_catalog(self) -> pystac_client.Client:
+        """Open the STAC catalog client.
+
+        Subclasses can override this method to customize catalog initialization,
+        for example by adding authentication or signing modifiers.
+
+        Returns
+        -------
+        pystac_client.Client
+            The opened STAC catalog client.
+        """
+        return pystac_client.Client.open(self.api_url)
 
     def load_collection(
         self,
@@ -93,7 +106,7 @@ class AWSCollectionLoader:
             Extra STAC query parameters (e.g. cloud cover filter).
         """
 
-        catalog = pystac_client.Client.open(self.api_url)
+        catalog = self._open_catalog()
 
         search_kwargs: dict[str, Any] = {
             "collections": [collection_id],
@@ -183,11 +196,31 @@ class AWSCollectionLoader:
 
 
 # ---------------------------------------------------------------------------
+# Default implementation – AWS Earth Search via pystac-client + stackstac
+# ---------------------------------------------------------------------------
+
+
+class AWSCollectionLoader(BaseCollectionLoader):
+    """Load collections from the Element 84 Earth Search STAC API on AWS.
+
+    This is a convenience default; users can inject any
+    :class:`CollectionLoader`-compatible adapter.
+
+    Parameters
+    ----------
+    api_url : str
+        STAC API endpoint. Defaults to Earth Search v1.
+    """
+
+    DEFAULT_API_URL = "https://earth-search.aws.element84.com/v1"
+
+
+# ---------------------------------------------------------------------------
 # Microsoft Planetary Computer via pystac-client + stackstac
 # ---------------------------------------------------------------------------
 
 
-class MicrosoftPlanetaryComputerLoader:
+class MicrosoftPlanetaryComputerLoader(BaseCollectionLoader):
     """Load collections from the Microsoft Planetary Computer STAC API.
 
     Assets hosted on Azure Blob Storage require SAS-token signing which
@@ -204,118 +237,18 @@ class MicrosoftPlanetaryComputerLoader:
 
     DEFAULT_API_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 
-    def __init__(self, api_url: str | None = None) -> None:
-        self.api_url = api_url or self.DEFAULT_API_URL
+    def _open_catalog(self) -> pystac_client.Client:
+        """Open the Planetary Computer STAC catalog with SAS token signing.
 
-    def load_collection(
-        self,
-        collection_id: str,
-        *,
-        spatial_extent: dict | None = None,
-        temporal_extent: tuple[str, str] | None = None,
-        bands: list[str] | None = None,
-        properties: dict | None = None,
-        **kwargs: Any,
-    ) -> xr.DataArray:
-        """Search the Planetary Computer STAC API and return a dask-backed DataArray.
-
-        Parameters
-        ----------
-        collection_id : str
-            STAC collection identifier (e.g. ``"landsat-c2-l2"``,
-            ``"sentinel-2-l2a"``).
-        spatial_extent : dict | None
-            Bounding box as ``{west, south, east, north}``.  May include
-            an optional ``crs`` key (EPSG code as int, or WKT2 string).
-            Defaults to ``4326`` (WGS 84) when omitted.
-        temporal_extent : tuple[str, str] | None
-            ``(start_datetime, end_datetime)`` ISO-8601 strings.
-        bands : list[str] | None
-            Asset / band names to include.  ``None`` loads all.
-        properties : dict | None
-            Extra STAC query parameters (e.g. cloud cover filter).
+        Returns
+        -------
+        pystac_client.Client
+            The opened STAC catalog client with planetary_computer modifier.
         """
-
-        catalog = pystac_client.Client.open(
+        return pystac_client.Client.open(
             self.api_url,
             modifier=planetary_computer.sign_inplace,
         )
-
-        search_kwargs: dict[str, Any] = {
-            "collections": [collection_id],
-            "max_items": kwargs.pop("max_items", 100),
-        }
-
-        extent_crs: int | str = 4326
-        user_specified_crs = False
-        if spatial_extent is not None and "crs" in spatial_extent:
-            extent_crs = spatial_extent["crs"]
-            user_specified_crs = True
-
-        if spatial_extent is not None:
-            bbox_coords = [
-                spatial_extent["west"],
-                spatial_extent["south"],
-                spatial_extent["east"],
-                spatial_extent["north"],
-            ]
-            if _is_epsg_4326(extent_crs):
-                search_kwargs["bbox"] = bbox_coords
-            else:
-                search_kwargs["bbox"] = _reproject_bbox(bbox_coords, extent_crs, 4326)
-
-        if temporal_extent is not None:
-            search_kwargs["datetime"] = "/".join(temporal_extent)
-
-        if properties:
-            search_kwargs["query"] = properties
-
-        items = catalog.search(**search_kwargs).item_collection()
-
-        if len(items) == 0:
-            raise ValueError(
-                f"No items found for collection {collection_id!r} with the "
-                f"given filters."
-            )
-
-        # Build lazy DataArray via stackstac
-        stack_kwargs: dict[str, Any] = {}
-        if bands is not None:
-            stack_kwargs["assets"] = bands
-
-        if user_specified_crs and isinstance(extent_crs, int):
-            stack_kwargs.setdefault("epsg", extent_crs)
-        else:
-            detected_epsg = _detect_common_epsg(items)
-            stack_kwargs.setdefault("epsg", detected_epsg)
-
-        if spatial_extent is not None:
-            bbox_coords = [
-                spatial_extent["west"],
-                spatial_extent["south"],
-                spatial_extent["east"],
-                spatial_extent["north"],
-            ]
-            if _is_epsg_4326(extent_crs):
-                stack_kwargs.setdefault("bounds_latlon", bbox_coords)
-            else:
-                stack_kwargs.setdefault("bounds", bbox_coords)
-
-        stack_kwargs.update(kwargs)
-
-        da: xr.DataArray = stackstac.stack(items, **stack_kwargs)
-
-        rename_map: dict[str, str] = {}
-        if "band" in da.dims:
-            rename_map["band"] = "bands"
-        if "y" in da.dims:
-            rename_map["y"] = "latitude"
-        if "x" in da.dims:
-            rename_map["x"] = "longitude"
-        if rename_map:
-            da = da.rename(rename_map)
-
-        return da
 
 
 # ---------------------------------------------------------------------------
