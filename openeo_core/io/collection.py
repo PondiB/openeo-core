@@ -109,8 +109,6 @@ class BaseCollectionLoader(ABC):
         properties : dict | None
             Extra STAC query parameters (e.g. cloud cover filter).
         """
-        import pystac_client
-        import stackstac
 
         catalog = self._open_catalog()
 
