@@ -764,7 +764,7 @@ def array_interpolate_linear(
     Examples
     --------
     >>> array_interpolate_linear([None, 1, None, 6, None, -8])
-    [None, 1, 3.5, 6, -1.0, -8]
+    [None, 1, 3.5, 6, -1, -8]
     >>> array_interpolate_linear([None, 1, None, None])
     [None, 1, None, None]
     """
