@@ -319,6 +319,117 @@ class DataCube:
 
             return DataCube(_apply_v(self._data, process, context=context))  # type: ignore[arg-type]
 
+    def reduce_dimension(
+        self,
+        reducer: str | Callable[..., Any],
+        *,
+        dimension: str,
+        context: Any = None,
+    ) -> "DataCube":
+        """Reduce a dimension by applying a reducer function.
+
+        The specified dimension is collapsed and dropped from the result.
+
+        Parameters
+        ----------
+        reducer : str | callable
+            A string name (``"mean"``, ``"sum"``, ``"min"``, ``"max"``,
+            ``"median"``, ``"std"``, ``"var"``, ``"prod"``, ``"count"``,
+            ``"any"``, ``"all"``), a dotted Python path
+            (e.g. ``"numpy.nanmean"``), or a callable.
+        dimension : str
+            Dimension to reduce over.
+        context
+            Optional extra data forwarded to *reducer*.
+        """
+        self._assert_raster("reduce_dimension")
+        from openeo_core.ops.raster import reduce_dimension as _rd
+
+        return DataCube(
+            _rd(self._data, reducer, dimension=dimension, context=context)  # type: ignore[arg-type]
+        )
+
+    def apply_kernel(
+        self,
+        *,
+        kernel: list[list[float]],
+        factor: float = 1.0,
+        border: float | str = 0,
+        replace_invalid: float = 0.0,
+        x_dim: str = "longitude",
+        y_dim: str = "latitude",
+    ) -> "DataCube":
+        """Apply a 2-D spatial convolution kernel.
+
+        Parameters
+        ----------
+        kernel : list[list[float]]
+            2-D array of convolution weights (odd dimensions required).
+        factor : float
+            Multiplicative factor applied after convolution.
+        border : float | str
+            Border handling strategy.
+        replace_invalid : float
+            Value to substitute for NaN / Inf before convolution.
+        """
+        self._assert_raster("apply_kernel")
+        from openeo_core.ops.raster import apply_kernel as _ak
+
+        return DataCube(
+            _ak(
+                self._data,  # type: ignore[arg-type]
+                kernel=kernel,
+                factor=factor,
+                border=border,
+                replace_invalid=replace_invalid,
+                x_dim=x_dim,
+                y_dim=y_dim,
+            )
+        )
+
+    # ------------------------------------------------------------------
+    # Vector operations
+    # ------------------------------------------------------------------
+
+    def vector_buffer(
+        self,
+        *,
+        distance: float,
+    ) -> "DataCube":
+        """Buffer each geometry by *distance* metres.
+
+        Parameters
+        ----------
+        distance : float
+            Buffer distance in metres.  Positive expands, negative shrinks.
+        """
+        self._assert_vector("vector_buffer")
+        from openeo_core.ops.vector import vector_buffer as _vb
+
+        return DataCube(_vb(self._data, distance=distance))  # type: ignore[arg-type]
+
+    def vector_reproject(
+        self,
+        *,
+        projection: int | str,
+        dimension: str | None = None,
+    ) -> "DataCube":
+        """Reproject geometries to a different CRS.
+
+        Parameters
+        ----------
+        projection : int | str
+            Target CRS as EPSG code (int) or WKT2 string.
+        dimension : str | None
+            Geometry dimension to reproject.  ``None`` reprojects all.
+        """
+        self._assert_vector("vector_reproject")
+        from openeo_core.ops.vector import vector_reproject as _vr
+
+        return DataCube(
+            _vr(self._data, projection=projection, dimension=dimension)  # type: ignore[arg-type]
+        )
+
     # ------------------------------------------------------------------
     # Materialisation
     # ------------------------------------------------------------------
@@ -364,6 +475,10 @@ class DataCube:
     def _assert_raster(self, method: str) -> None:
         if not self.is_raster:
             raise TypeError(f"{method}() requires a raster cube, got {type(self._data).__name__}")
+
+    def _assert_vector(self, method: str) -> None:
+        if not self.is_vector:
+            raise TypeError(f"{method}() requires a vector cube, got {type(self._data).__name__}")
 
 
 # ---------------------------------------------------------------------------
