@@ -4,9 +4,9 @@ The default implementation uses **pystac-client** to search the
 `Earth Search <https://earth-search.aws.element84.com/v1>`_ STAC API
 (Sentinel-2 L2A on AWS) and **stackstac** to build a lazy xarray DataArray.
 
-A Microsoft `Planetary Computer
-<https://planetarycomputer.microsoft.com/>`_ loader is also provided,
-which uses the **planetary-computer** package for SAS token signing.
+A Microsoft `Planetary Computer <https://planetarycomputer.microsoft.com/>`_
+loader is also provided, which uses the **planetary-computer** package for
+SAS token signing.
 """
 
 from __future__ import annotations
