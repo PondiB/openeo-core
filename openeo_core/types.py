@@ -6,11 +6,7 @@ from typing import Union
 
 import geopandas as gpd
 import xarray as xr
-
-try:
-    import dask_geopandas
-except ImportError:  # pragma: no cover
-    dask_geopandas = None  # type: ignore[assignment]
+import dask_geopandas
 
 # ---------------------------------------------------------------------------
 # Public type aliases
@@ -21,7 +17,7 @@ RasterCube = xr.DataArray
 
 VectorCube = Union[
     gpd.GeoDataFrame,
-    "dask_geopandas.GeoDataFrame",
+    dask_geopandas.GeoDataFrame,
     xr.DataArray,
     xr.Dataset,
 ]
