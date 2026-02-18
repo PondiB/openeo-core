@@ -8,15 +8,11 @@ import geopandas as gpd
 import numpy as np
 import pyproj
 import xarray as xr
+import dask_geopandas
+import xvec  # noqa: F401
 
 from openeo_core.exceptions import DimensionNotAvailable, UnitMismatch
 from openeo_core.types import VectorCube
-
-try:
-    import dask_geopandas
-except ImportError:  # pragma: no cover
-    dask_geopandas = None  # type: ignore[assignment]
-
 
 # ---------------------------------------------------------------------------
 # vector_buffer
@@ -307,10 +303,6 @@ def to_feature_matrix(
 
 def _has_xvec_geometry(obj: xr.DataArray | xr.Dataset) -> bool:
     """Return True if *obj* has xvec geometry coordinates."""
-    try:
-        import xvec  # noqa: F401
-    except ImportError:
-        return False
     if not hasattr(obj, "xvec"):
         return False
     try:
