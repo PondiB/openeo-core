@@ -29,16 +29,20 @@ dependencies = [
 [project.optional-dependencies]
 ml-sklearn = ["scikit-learn>=1.7.2", "joblib>=1.5.3"]
 ml-xgboost = ["xgboost>=3.2.0"]
-ml-torch = ["torch"]
+ml-torch = ["torch>=2.0.0", "torch-optimizer>=0.3.0"]
 all = [
     "scikit-learn>=1.7.2",
     "xgboost>=3.2.0",
+    "torch>=2.0.0",
+    "torch-optimizer>=0.3.0",
 ]
 dev = [
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "scikit-learn>=1.7.2",
     "xgboost>=3.2.0",
+    "torch>=2.0.0",
+    "torch-optimizer>=0.3.0",
 ]
 
 [build-system]
