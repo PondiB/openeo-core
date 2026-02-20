@@ -235,7 +235,7 @@ class TorchClassifierWrapper:
             ).to(self.device)
             with torch.no_grad():
                 logits = self._module(batch)
-                indices = logits.argmax(dim=-1).cpu().numpy()
+                indices = np.asarray(logits.argmax(dim=-1).cpu().tolist())
             all_preds.append(indices)
 
         indices = np.concatenate(all_preds, axis=0)
