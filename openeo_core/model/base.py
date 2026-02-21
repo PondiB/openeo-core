@@ -8,6 +8,8 @@ Initialization (returns untrained ``MLModel``)::
     mlm_class_random_forest(max_variables, num_trees=100, seed=None)
     mlm_regr_random_forest(max_variables, num_trees=100, seed=None)
     mlm_class_xgboost(learning_rate=0.15, max_depth=5, ...)
+    mlm_class_tempcnn(cnn_layers=[256,256,256], ...)
+    mlm_class_lighttae(epochs=150, ...)
 
 Training and prediction::
 
@@ -22,6 +24,8 @@ Serialisation (STAC MLM)::
 A convenience ``Model`` class is also available for a fluent style::
 
     model = Model.random_forest(max_variables="sqrt", num_trees=200)
+    model = Model.tempcnn(epochs=50, batch_size=32)
+    model = Model.lighttae(epochs=100)
 """
 
 from __future__ import annotations
@@ -195,6 +199,176 @@ def mlm_class_xgboost(
         )],
         estimator=estimator,
         backend="xgboost",
+    )
+
+
+def mlm_class_tempcnn(
+    cnn_layers: list[int] | None = None,
+    cnn_kernels: list[int] | None = None,
+    cnn_dropout_rates: list[float] | None = None,
+    dense_layer_nodes: int = 256,
+    dense_layer_dropout_rate: float = 0.5,
+    epochs: int = 100,
+    batch_size: int = 64,
+    optimizer: str = "adam",
+    learning_rate: float = 0.001,
+    seed: int | None = None,
+) -> MLModel:
+    """Initialize a TempCNN **classification** model.
+
+    Implements ``mlm_class_tempcnn`` from the openEO process specs.
+    Does **not** train — use :func:`ml_fit` afterwards.
+
+    Parameters
+    ----------
+    cnn_layers : list[int]
+        Number of filters per convolutional layer (default ``[256, 256, 256]``).
+    cnn_kernels : list[int]
+        Kernel size per convolutional layer (default ``[7, 7, 7]``).
+    cnn_dropout_rates : list[float]
+        Dropout rate per convolutional layer (default ``[0.2, 0.2, 0.2]``).
+    dense_layer_nodes : int
+        Units in the dense hidden layer (default 256).
+    dense_layer_dropout_rate : float
+        Dropout rate for the dense layer (default 0.5).
+    epochs : int
+        Training epochs (default 100).
+    batch_size : int
+        Mini-batch size (default 64).
+    optimizer : str
+        Optimizer name (default ``"adam"``).
+    learning_rate : float
+        Base learning rate (default 0.001).
+    seed : int | None
+        Random seed for reproducibility.
+    """
+    from openeo_core.model.torch import build_tempcnn_estimator
+
+    if cnn_layers is None:
+        cnn_layers = [256, 256, 256]
+    if cnn_kernels is None:
+        cnn_kernels = [7, 7, 7]
+    if cnn_dropout_rates is None:
+        cnn_dropout_rates = [0.2, 0.2, 0.2]
+
+    hyperparams = {
+        "cnn_layers": cnn_layers,
+        "cnn_kernels": cnn_kernels,
+        "cnn_dropout_rates": cnn_dropout_rates,
+        "dense_layer_nodes": dense_layer_nodes,
+        "dense_layer_dropout_rate": dense_layer_dropout_rate,
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "optimizer": optimizer,
+        "learning_rate": learning_rate,
+        "seed": seed,
+    }
+    estimator = build_tempcnn_estimator(
+        cnn_layers=cnn_layers,
+        cnn_kernels=cnn_kernels,
+        cnn_dropout_rates=cnn_dropout_rates,
+        dense_layer_nodes=dense_layer_nodes,
+        dense_layer_dropout_rate=dense_layer_dropout_rate,
+        epochs=epochs,
+        batch_size=batch_size,
+        optimizer=optimizer,
+        learning_rate=learning_rate,
+        seed=seed,
+    )
+
+    return MLModel(
+        name="TempCNN Classifier",
+        architecture="TempCNN",
+        tasks=["classification"],
+        framework="PyTorch",
+        framework_version=_torch_version(),
+        hyperparameters=hyperparams,
+        outputs=[ModelOutput(
+            name="predictions",
+            tasks=["classification"],
+            result=ResultStructure(shape=[-1], dim_order=["batch"], data_type="int64"),
+        )],
+        estimator=estimator,
+        backend="torch",
+    )
+
+
+def mlm_class_lighttae(
+    epochs: int = 150,
+    batch_size: int = 128,
+    optimizer: str = "adam",
+    learning_rate: float = 0.0005,
+    epsilon: float = 1e-8,
+    weight_decay: float = 0.0007,
+    lr_decay_epochs: int = 50,
+    lr_decay_rate: float = 1.0,
+    seed: int | None = None,
+) -> MLModel:
+    """Initialize a LightTAE **classification** model.
+
+    Implements ``mlm_class_lighttae`` from the openEO process specs.
+    Does **not** train — use :func:`ml_fit` afterwards.
+
+    Parameters
+    ----------
+    epochs : int
+        Training epochs (default 150).
+    batch_size : int
+        Mini-batch size (default 128).
+    optimizer : str
+        Optimizer name (default ``"adam"``).
+    learning_rate : float
+        Base learning rate (default 0.0005).
+    epsilon : float
+        Optimizer epsilon for numerical stability (default 1e-8).
+    weight_decay : float
+        L2 penalty (default 0.0007).
+    lr_decay_epochs : int
+        Epochs between LR decay steps (default 50).
+    lr_decay_rate : float
+        LR decay factor (default 1.0, i.e. no decay).
+    seed : int | None
+        Random seed for reproducibility.
+    """
+    from openeo_core.model.torch import build_lighttae_estimator
+
+    hyperparams = {
+        "epochs": epochs,
+        "batch_size": batch_size,
+        "optimizer": optimizer,
+        "learning_rate": learning_rate,
+        "epsilon": epsilon,
+        "weight_decay": weight_decay,
+        "lr_decay_epochs": lr_decay_epochs,
+        "lr_decay_rate": lr_decay_rate,
+        "seed": seed,
+    }
+    estimator = build_lighttae_estimator(
+        epochs=epochs,
+        batch_size=batch_size,
+        optimizer=optimizer,
+        learning_rate=learning_rate,
+        epsilon=epsilon,
+        weight_decay=weight_decay,
+        lr_decay_epochs=lr_decay_epochs,
+        lr_decay_rate=lr_decay_rate,
+        seed=seed,
+    )
+
+    return MLModel(
+        name="LightTAE Classifier",
+        architecture="LightTAE",
+        tasks=["classification"],
+        framework="PyTorch",
+        framework_version=_torch_version(),
+        hyperparameters=hyperparams,
+        outputs=[ModelOutput(
+            name="predictions",
+            tasks=["classification"],
+            result=ResultStructure(shape=[-1], dim_order=["batch"], data_type="int64"),
+        )],
+        estimator=estimator,
+        backend="torch",
     )
 
 
@@ -581,6 +755,58 @@ class Model:
             seed=seed,
         )
 
+    @staticmethod
+    def tempcnn(
+        *,
+        cnn_layers: list[int] | None = None,
+        cnn_kernels: list[int] | None = None,
+        cnn_dropout_rates: list[float] | None = None,
+        dense_layer_nodes: int = 256,
+        dense_layer_dropout_rate: float = 0.5,
+        epochs: int = 100,
+        batch_size: int = 64,
+        optimizer: str = "adam",
+        learning_rate: float = 0.001,
+        seed: int | None = None,
+    ) -> MLModel:
+        return mlm_class_tempcnn(
+            cnn_layers=cnn_layers,
+            cnn_kernels=cnn_kernels,
+            cnn_dropout_rates=cnn_dropout_rates,
+            dense_layer_nodes=dense_layer_nodes,
+            dense_layer_dropout_rate=dense_layer_dropout_rate,
+            epochs=epochs,
+            batch_size=batch_size,
+            optimizer=optimizer,
+            learning_rate=learning_rate,
+            seed=seed,
+        )
+
+    @staticmethod
+    def lighttae(
+        *,
+        epochs: int = 150,
+        batch_size: int = 128,
+        optimizer: str = "adam",
+        learning_rate: float = 0.0005,
+        epsilon: float = 1e-8,
+        weight_decay: float = 0.0007,
+        lr_decay_epochs: int = 50,
+        lr_decay_rate: float = 1.0,
+        seed: int | None = None,
+    ) -> MLModel:
+        return mlm_class_lighttae(
+            epochs=epochs,
+            batch_size=batch_size,
+            optimizer=optimizer,
+            learning_rate=learning_rate,
+            epsilon=epsilon,
+            weight_decay=weight_decay,
+            lr_decay_epochs=lr_decay_epochs,
+            lr_decay_rate=lr_decay_rate,
+            seed=seed,
+        )
+
 
 # =====================================================================
 # Internal helpers
@@ -638,4 +864,12 @@ def _xgboost_version() -> str | None:
         import xgboost
         return xgboost.__version__
     except Exception:
+        return None
+
+
+def _torch_version() -> str | None:
+    try:
+        import torch
+        return torch.__version__
+    except ImportError:
         return None

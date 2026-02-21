@@ -10,6 +10,8 @@ openEO process functions:
 * :func:`mlm_class_random_forest` – initialise RF classifier
 * :func:`mlm_regr_random_forest` – initialise RF regressor
 * :func:`mlm_class_xgboost` – initialise XGBoost classifier
+* :func:`mlm_class_tempcnn` – initialise TempCNN classifier (PyTorch)
+* :func:`mlm_class_lighttae` – initialise LightTAE classifier (PyTorch)
 * :func:`ml_fit` – train a model
 * :func:`ml_predict` – apply a trained model
 * :func:`save_ml_model` – persist model + STAC Item
@@ -24,6 +26,8 @@ from openeo_core.model.base import (
     mlm_class_random_forest,
     mlm_class_xgboost,
     mlm_regr_random_forest,
+    mlm_class_tempcnn,
+    mlm_class_lighttae,
     save_ml_model,
     load_stac_ml,
 )
@@ -41,6 +45,8 @@ __all__ = [
     "mlm_class_random_forest",
     "mlm_regr_random_forest",
     "mlm_class_xgboost",
+    "mlm_class_tempcnn",
+    "mlm_class_lighttae",
     "ml_fit",
     "ml_predict",
     "save_ml_model",
