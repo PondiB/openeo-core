@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable
 
 import geopandas as gpd
@@ -13,6 +14,8 @@ import xvec  # noqa: F401
 
 from openeo_core.exceptions import DimensionNotAvailable, UnitMismatch
 from openeo_core.types import VectorCube
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # vector_buffer
@@ -200,13 +203,16 @@ def filter_bbox(
             "geometry coordinates; got an xarray object without xvec geometry."
         )
 
-    # GeoDataFrame / dask GeoDataFrame
-    if isinstance(data, gpd.GeoDataFrame) or (
-        dask_geopandas is not None
-        and isinstance(data, dask_geopandas.GeoDataFrame)
-    ):
-        mask = data.geometry.within(bbox)
-        return data.loc[mask].copy()
+    # GeoDataFrame – use spatial index for O(n·log(n)) instead of O(n) full scan
+    if isinstance(data, gpd.GeoDataFrame):
+        candidates = data.sindex.query(bbox, predicate="contains")
+        return data.iloc[candidates].copy()
+
+    # dask GeoDataFrame – materialise then use sindex
+    if dask_geopandas is not None and isinstance(data, dask_geopandas.GeoDataFrame):
+        gdf = data.compute()
+        candidates = gdf.sindex.query(bbox, predicate="contains")
+        return gdf.iloc[candidates].copy()
 
     raise TypeError(
         f"filter_bbox only supports GeoDataFrame, dask GeoDataFrame, or xarray "

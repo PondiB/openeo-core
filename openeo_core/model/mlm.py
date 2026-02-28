@@ -187,6 +187,7 @@ class MLModel:
         self._trained = False
         self._n_features: int | None = None
         self._feature_names: list[str] | None = None
+        self._feature_dims: list[str] | None = None
 
     # ------------------------------------------------------------------
     # Properties

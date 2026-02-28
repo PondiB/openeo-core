@@ -173,6 +173,46 @@ class TestMLFitPredict:
         assert "predictions" in preds.dims
         assert "x" in preds.dims
 
+    def test_multi_dimension_bands_and_time(self):
+        """RF with dimension=["bands", "t"] flattens both into features."""
+        np.random.seed(0)
+        n_bands, n_times = 3, 4
+        n_features = n_bands * n_times
+        n_samples = 60
+        X = np.random.rand(n_samples, n_features).astype(np.float32)
+        y = (X[:, 0] > 0.5).astype(int)
+        cols = {f"feat_{i}": X[:, i] for i in range(n_features)}
+        cols["label"] = y
+        gdf = gpd.GeoDataFrame(cols, geometry=[Point(0, 0)] * n_samples)
+
+        model = mlm_class_random_forest(
+            max_variables="sqrt", num_trees=10, seed=0,
+            dimension=["bands", "t"],
+        )
+        assert model._feature_dims == ["bands", "t"]
+        trained = ml_fit(model, gdf, target="label")
+
+        raster = xr.DataArray(
+            np.random.rand(2, n_bands, n_times, 3).astype(np.float32),
+            dims=["y", "bands", "t", "x"],
+            coords={
+                "bands": [f"b{i}" for i in range(n_bands)],
+                "t": pd.date_range("2023-01-01", periods=n_times, freq="ME"),
+                "x": [0.0, 1.0, 2.0],
+                "y": [0.0, 1.0],
+            },
+        )
+        preds = ml_predict(raster, trained)
+        assert "predictions" in preds.dims
+        assert "x" in preds.dims
+        assert "y" in preds.dims
+        assert "bands" not in preds.dims
+        assert "t" not in preds.dims
+
+    def test_default_dimension_is_bands(self):
+        model = mlm_class_random_forest(max_variables="sqrt", num_trees=10)
+        assert model._feature_dims == ["bands"]
+
 
 # ---------------------------------------------------------------
 # STAC MLM metadata

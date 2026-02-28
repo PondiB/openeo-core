@@ -1,6 +1,23 @@
 # openeo-core
 
+[![PyPI version](https://img.shields.io/pypi/v/openeo-core.svg)](https://pypi.org/project/openeo-core/)
+[![Python](https://img.shields.io/pypi/pyversions/openeo-core.svg)](https://pypi.org/project/openeo-core/)
+[![License](https://img.shields.io/github/license/PondiB/openeo-core.svg)](https://github.com/PondiB/openeo-core/blob/main/LICENSE)
+[![Tests](https://img.shields.io/github/actions/workflow/status/PondiB/openeo-core/tests.yml?branch=dev&label=tests)](https://github.com/PondiB/openeo-core/actions)
+[![STAC MLM](https://img.shields.io/badge/STAC-MLM%20v1.5.1-blue)](https://stac-extensions.github.io/mlm/)
+[![openEO](https://img.shields.io/badge/openEO-process--aligned-green)](https://openeo.org/)
+
 A standalone Python library providing a fluent, Pythonic API for working with **raster data cubes** and **vector cubes**, implementing selected **openEO processes** locally using **xarray** and **dask**, with **STAC MLM-compatible** ML model objects.
+
+## Features
+
+- **Fluent DataCube API** — chain raster and vector operations in a readable pipeline
+- **openEO process-aligned** — function signatures match the openEO process specs
+- **STAC MLM-compatible models** — every model carries full STAC Machine Learning Model metadata
+- **Multiple ML backends** — scikit-learn, XGBoost, and PyTorch (TempCNN, LightTAE)
+- **Flexible feature dimensions** — control which cube dimensions become model features via `dimension`
+- **Spatial indexing** — accelerated vector operations with R-tree spatial index
+- **Process Registry** — discover and search bundled openEO process specifications
 
 ## Installation
 
@@ -14,11 +31,16 @@ uv pip install git+https://github.com/PondiB/openeo-core.git
 pip install git+https://github.com/PondiB/openeo-core.git
 ```
 
-Optional extras (ML backends, geo tools, dev):
+Optional extras (ML backends, dev):
 
 ```bash
 # ML backends
-uv pip install "openeo-core[ml-sklearn,ml-xgboost] @ git+https://github.com/PondiB/openeo-core.git"
+uv pip install "openeo-core[ml-sklearn] @ git+https://github.com/PondiB/openeo-core.git"
+uv pip install "openeo-core[ml-xgboost] @ git+https://github.com/PondiB/openeo-core.git"
+uv pip install "openeo-core[ml-torch] @ git+https://github.com/PondiB/openeo-core.git"
+
+# Everything
+uv pip install "openeo-core[all] @ git+https://github.com/PondiB/openeo-core.git"
 
 # Dev tools
 pip install "openeo-core[dev] @ git+https://github.com/PondiB/openeo-core.git"
@@ -38,6 +60,7 @@ uv sync
 # With ML backends
 uv sync --extra ml-sklearn
 uv sync --extra ml-xgboost
+uv sync --extra ml-torch
 
 # Everything including dev tools
 uv sync --extra dev
@@ -77,6 +100,8 @@ from openeo_core.model import (
     mlm_class_random_forest,
     mlm_regr_random_forest,
     mlm_class_xgboost,
+    mlm_class_tempcnn,
+    mlm_class_lighttae,
     ml_fit,
     ml_predict,
     save_ml_model,
@@ -85,27 +110,52 @@ from openeo_core.model import (
 
 # 1. Initialize (openEO: mlm_class_random_forest)
 model = mlm_class_random_forest(
-    max_variables="sqrt",  # or int, "all", "log2", "onethird"
+    max_variables="sqrt",
     num_trees=200,
     seed=42,
 )
 
 # 2. Train (openEO: ml_fit)
-#    training_gdf is a GeoDataFrame with feature columns + target column
 trained = ml_fit(model, training_gdf, target="label")
 
 # 3. Predict (openEO: ml_predict)
 predictions = ml_predict(raster_cube, trained)
-# Returns a DataArray with a "predictions" dimension
 
 # 4. Save with STAC Item (openEO: save_ml_model)
 save_ml_model(trained, name="my_rf_model")
-# Creates: my_rf_model/model.pkl + my_rf_model/my_rf_model.stac.json
 
 # 5. Load from STAC Item (openEO: load_stac_ml)
 restored = load_stac_ml("my_rf_model/my_rf_model.stac.json")
 predictions = ml_predict(new_raster, restored)
 ```
+
+#### Feature dimensions
+
+The `dimension` parameter controls which data cube dimensions are flattened
+into the feature vector for model training and prediction. It is set once at
+model initialisation and used automatically by `ml_predict`:
+
+```python
+# Default: only the "bands" dimension becomes features
+model = mlm_class_random_forest(dimension=["bands"])
+
+# Use both spectral and temporal dimensions as features
+model = mlm_class_random_forest(
+    max_variables="sqrt",
+    num_trees=200,
+    dimension=["bands", "t"],
+)
+trained = ml_fit(model, training_gdf, target="label")
+predictions = ml_predict(raster_cube, trained)  # dimension handled automatically
+```
+
+Default values per model type:
+| Model | Default `dimension` |
+| ----- | ------------------- |
+| Random Forest | `["bands"]` |
+| XGBoost | `["bands"]` |
+| TempCNN | `["bands", "t"]` |
+| LightTAE | `["bands", "t"]` |
 
 #### XGBoost classification
 
@@ -119,6 +169,32 @@ model = mlm_class_xgboost(
     seed=42,
 )
 trained = ml_fit(model, training_gdf, target="label")
+```
+
+#### TempCNN classification (PyTorch)
+
+```python
+model = mlm_class_tempcnn(
+    epochs=100,
+    batch_size=64,
+    learning_rate=0.001,
+    seed=42,
+)
+trained = ml_fit(model, training_gdf, target="label")
+predictions = ml_predict(raster_cube, trained)
+```
+
+#### LightTAE classification (PyTorch)
+
+```python
+model = mlm_class_lighttae(
+    epochs=150,
+    batch_size=128,
+    learning_rate=0.0005,
+    seed=42,
+)
+trained = ml_fit(model, training_gdf, target="label")
+predictions = ml_predict(raster_cube, trained)
 ```
 
 #### STAC MLM metadata on model objects
@@ -151,6 +227,10 @@ from openeo_core.model import Model, ml_fit, ml_predict
 model = Model.random_forest(task="classification", max_variables="sqrt", num_trees=200)
 trained = ml_fit(model, gdf, target="label")
 preds = ml_predict(raster, trained)
+
+# PyTorch models
+model = Model.tempcnn(epochs=50, batch_size=32)
+model = Model.lighttae(epochs=100, learning_rate=0.001)
 ```
 
 ### Process Registry
@@ -223,7 +303,10 @@ openeo_core/
     base.py            # openEO process functions + Model factory
     sklearn.py         # scikit-learn estimator builder (internal)
     xgboost_backend.py # XGBoost estimator builder (internal)
-    torch.py           # PyTorch wrapper (Phase 2 roadmap)
+    torch.py           # PyTorch wrapper (TempCNN, LightTAE)
+    torch_models/      # PyTorch nn.Module implementations
+      tempcnn.py       # TempCNN architecture
+      lighttae.py      # LightTAE architecture
   processes/
     registry.py        # JSON spec registry
     resources/         # Packaged process JSON specs
@@ -236,10 +319,21 @@ openeo_core/
 | `mlm_class_random_forest` | `mlm_class_random_forest()`           | Init RF classifier         |
 | `mlm_regr_random_forest`  | `mlm_regr_random_forest()`            | Init RF regressor          |
 | `mlm_class_xgboost`       | `mlm_class_xgboost()`                 | Init XGBoost classifier    |
+| `mlm_class_tempcnn`       | `mlm_class_tempcnn()`                 | Init TempCNN classifier    |
+| `mlm_class_lighttae`      | `mlm_class_lighttae()`                | Init LightTAE classifier   |
 | `ml_fit`                  | `ml_fit(model, training_set, target)` | Train a model              |
 | `ml_predict`              | `ml_predict(data, model)`             | Predict with trained model |
 | `save_ml_model`           | `save_ml_model(data, name, options)`  | Save model + STAC Item     |
 | `load_stac_ml`            | `load_stac_ml(uri, ...)`              | Load model from STAC Item  |
+
+## Examples
+
+| Notebook | Description |
+| -------- | ----------- |
+| [01_ndvi.ipynb](examples/01_ndvi.ipynb) | NDVI computation with the DataCube API |
+| [02_ml_random_forest.ipynb](examples/02_ml_random_forest.ipynb) | Random Forest classification pipeline |
+| [03_process_registry.ipynb](examples/03_process_registry.ipynb) | Exploring the Process Registry |
+| [04_ml_tempcnn.ipynb](examples/04_ml_tempcnn.ipynb) | TempCNN temporal classification with PyTorch |
 
 ## Running Tests
 
