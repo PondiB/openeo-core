@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Callable
 
 import geopandas as gpd
@@ -14,8 +13,6 @@ import xvec  # noqa: F401
 
 from openeo_core.exceptions import DimensionNotAvailable, UnitMismatch
 from openeo_core.types import VectorCube
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # vector_buffer
