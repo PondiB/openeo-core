@@ -31,6 +31,7 @@ A convenience ``Model`` class is also available for a fluent style::
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 from typing import Any, Union
 
@@ -557,6 +558,7 @@ def ml_fit(
 def ml_predict(
     data: RasterCube,
     model: MLModel,
+    feature_dim: str | list[str] | None = None,
 ) -> RasterCube:
     """Apply a trained ML model to a data cube.
 
@@ -571,6 +573,13 @@ def ml_predict(
         Input feature data cube.
     model : MLModel
         A trained model (output of :func:`ml_fit`).
+    feature_dim : str or list[str] or None, optional
+        .. deprecated::
+            Pass the feature dimension(s) via the ``dimension`` argument of
+            :func:`ml_fit` / the MLModel factory functions instead.
+            When provided here, ``feature_dim`` overrides the dimension(s)
+            stored on the model (``model._feature_dims``).  This parameter
+            will be removed in a future release.
 
     Returns
     -------
@@ -585,7 +594,16 @@ def ml_predict(
         raise RuntimeError("Model has not been trained. Call ml_fit() first.")
 
     feat_dims: str | list[str]
-    if model._feature_dims is None:
+    if feature_dim is not None:
+        warnings.warn(
+            "The 'feature_dim' parameter of ml_predict() is deprecated and will be "
+            "removed in a future release.  Specify feature dimensions via the "
+            "'dimension' argument of the MLModel factory functions or ml_fit() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        feat_dims = feature_dim
+    elif model._feature_dims is None:
         feat_dims = "bands"
     elif len(model._feature_dims) == 0:
         raise ValueError(
