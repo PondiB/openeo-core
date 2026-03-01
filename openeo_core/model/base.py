@@ -51,6 +51,36 @@ from openeo_core.types import RasterCube, VectorCube
 # =====================================================================
 
 
+def _validate_dimension(dimension: list[str]) -> list[str]:
+    """Validate and copy the ``dimension`` parameter for MLModel factories.
+
+    Parameters
+    ----------
+    dimension:
+        The dimension list to validate.
+
+    Returns
+    -------
+    list[str]
+        A validated copy of the list.
+
+    Raises
+    ------
+    ValueError
+        If *dimension* is empty or contains non-string entries.
+    """
+    if not dimension:
+        raise ValueError(
+            "'dimension' must be a non-empty list of strings; got an empty list."
+        )
+    non_strings = [d for d in dimension if not isinstance(d, str)]
+    if non_strings:
+        raise ValueError(
+            f"'dimension' must contain only strings; got non-string entries: {non_strings!r}"
+        )
+    return list(dimension)
+
+
 def mlm_class_random_forest(
     max_variables: int | str = "sqrt",
     num_trees: int = 100,
@@ -82,6 +112,7 @@ def mlm_class_random_forest(
 
     if dimension is None:
         dimension = ["bands"]
+    dimension = _validate_dimension(dimension)
 
     hyperparams = {"max_variables": max_variables, "num_trees": num_trees, "seed": seed}
     estimator = build_random_forest_estimator(
@@ -126,6 +157,7 @@ def mlm_regr_random_forest(
 
     if dimension is None:
         dimension = ["bands"]
+    dimension = _validate_dimension(dimension)
 
     hyperparams = {"max_variables": max_variables, "num_trees": num_trees, "seed": seed}
     estimator = build_random_forest_estimator(
@@ -190,6 +222,7 @@ def mlm_class_xgboost(
 
     if dimension is None:
         dimension = ["bands"]
+    dimension = _validate_dimension(dimension)
 
     hyperparams = {
         "learning_rate": learning_rate,
@@ -276,6 +309,7 @@ def mlm_class_tempcnn(
 
     if dimension is None:
         dimension = ["bands", "t"]
+    dimension = _validate_dimension(dimension)
 
     if cnn_layers is None:
         cnn_layers = [256, 256, 256]
@@ -373,6 +407,7 @@ def mlm_class_lighttae(
 
     if dimension is None:
         dimension = ["bands", "t"]
+    dimension = _validate_dimension(dimension)
 
     hyperparams = {
         "epochs": epochs,
