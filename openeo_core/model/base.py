@@ -948,7 +948,7 @@ def _clone_model(model: MLModel) -> MLModel:
         estimator=_copy.deepcopy(model._estimator),
         backend=model._backend,
     )
-    new._feature_dims = list(model._feature_dims) if model._feature_dims else None
+    new._feature_dims = list(model._feature_dims) if model._feature_dims is not None else None
     return new
 
 
