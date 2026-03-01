@@ -151,6 +151,19 @@ class TestMLFitPredict:
         except ValueError as e:
             assert "mismatch" in str(e).lower()
 
+    def test_empty_feature_dims_raises(self):
+        model = mlm_class_random_forest(max_variables="sqrt", num_trees=10, seed=0)
+        gdf = _make_training_gdf()
+        trained = ml_fit(model, gdf, target="label")
+        trained._feature_dims = []
+
+        raster = _make_raster()
+        try:
+            ml_predict(raster, trained)
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            assert "empty list" in str(e).lower()
+
     def test_regression_fit_predict(self):
         np.random.seed(0)
         n = 50
