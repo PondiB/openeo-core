@@ -208,12 +208,16 @@ def filter_bbox(
         candidates = data.sindex.query(bbox, predicate="contains")
         return data.iloc[candidates].copy()
 
-    # dask GeoDataFrame – materialise then use sindex
+    # dask GeoDataFrame – apply the same spatial index query lazily per partition
     if dask_geopandas is not None and isinstance(data, dask_geopandas.GeoDataFrame):
-        gdf = data.compute()
-        candidates = gdf.sindex.query(bbox, predicate="contains")
-        return gdf.iloc[candidates].copy()
+        def _filter_partition_by_bbox(partition):
+            # Partition is a pandas/GeoPandas GeoDataFrame
+            if partition.empty:
+                return partition
+            candidates = partition.sindex.query(bbox, predicate="contains")
+            return partition.iloc[candidates].copy()
 
+        return data.map_partitions(_filter_partition_by_bbox)
     raise TypeError(
         f"filter_bbox only supports GeoDataFrame, dask GeoDataFrame, or xarray "
         f"DataArray/Dataset with xvec geometry; got {type(data)!r}."
