@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import geopandas as gpd
+import pytest
 import xarray as xr
 from shapely.geometry import Point
 
@@ -224,6 +225,20 @@ class TestMLFitPredict:
 
     def test_default_dimension_is_bands(self):
         model = mlm_class_random_forest(max_variables="sqrt", num_trees=10)
+        assert model._feature_dims == ["bands"]
+
+    def test_empty_dimension_raises(self):
+        with pytest.raises(ValueError, match="non-empty"):
+            mlm_class_random_forest(max_variables="sqrt", num_trees=10, dimension=[])
+
+    def test_non_string_dimension_raises(self):
+        with pytest.raises(ValueError, match="non-string"):
+            mlm_class_random_forest(max_variables="sqrt", num_trees=10, dimension=["bands", 42])
+
+    def test_dimension_is_copied(self):
+        dims = ["bands"]
+        model = mlm_class_random_forest(max_variables="sqrt", num_trees=10, dimension=dims)
+        dims.append("t")
         assert model._feature_dims == ["bands"]
 
 
