@@ -890,6 +890,8 @@ def stack_to_samples(
     Returns a 2-D DataArray with shape ``(samples, features)``.
     """
     if isinstance(feature_dim, list):
+        if not feature_dim:
+            raise ValueError("feature_dim must not be an empty list")
         if len(feature_dim) == 1:
             feature_dim = feature_dim[0]
         else:
@@ -914,6 +916,8 @@ def unstack_from_samples(
         Must match the value passed to :func:`stack_to_samples`.
     """
     if isinstance(feature_dim, list):
+        if not feature_dim:
+            raise ValueError("feature_dim must not be an empty list")
         if len(feature_dim) == 1:
             feature_dim = feature_dim[0]
         else:
