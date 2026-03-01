@@ -549,7 +549,15 @@ def ml_predict(
     if not model.trained:
         raise RuntimeError("Model has not been trained. Call ml_fit() first.")
 
-    feat_dims: str | list[str] = model._feature_dims if model._feature_dims else "bands"
+    feat_dims: str | list[str]
+    if model._feature_dims is None:
+        feat_dims = "bands"
+    elif len(model._feature_dims) == 0:
+        raise ValueError(
+            "_feature_dims is set to an empty list. Provide at least one feature dimension or set it to None to use the default 'bands' dimension."
+        )
+    else:
+        feat_dims = model._feature_dims
 
     template = data
     stacked = stack_to_samples(data, feature_dim=feat_dims)
