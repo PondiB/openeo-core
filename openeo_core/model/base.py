@@ -814,8 +814,16 @@ def load_stac_ml(
 
     # Restore feature dimensions
     feat_dims = properties.get("openeo:dimension")
-    if feat_dims:
-        model._feature_dims = feat_dims
+    dims: list[str] | None = None
+    if isinstance(feat_dims, str):
+        # Single dimension name as string
+        dims = [feat_dims]
+    elif isinstance(feat_dims, (list, tuple)):
+        # Sequence of dimension names – keep only non-empty strings
+        dims = [d for d in feat_dims if isinstance(d, str) and d]
+    # Only assign if we have a non-empty list of strings
+    if dims:
+        model._feature_dims = list(dims)
 
     return model
 
