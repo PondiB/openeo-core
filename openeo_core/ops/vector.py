@@ -189,8 +189,8 @@ def filter_bbox(
         coord_name = _first_geom_coord_name(data)
         if coord_name is None:
             raise ValueError("xvec data has no geometry coordinate to query")
-        # predicate="contains" means the bbox contains the indexed geometries
-        # (bbox.contains(geom)), which keeps geometries inside the bbox
+        # predicate="contains": bbox.contains(geom) keeps geometries
+        # that are inside the bbox
         return data.xvec.query(coord_name, bbox, predicate="contains")
 
     # xarray without xvec geometry: explicitly unsupported
