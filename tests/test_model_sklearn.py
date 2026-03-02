@@ -223,6 +223,34 @@ class TestMLFitPredict:
         assert "bands" not in preds.dims
         assert "t" not in preds.dims
 
+    def test_deprecated_feature_dim_kwarg(self):
+        """Passing feature_dim= to ml_predict emits DeprecationWarning but still works."""
+        model = mlm_class_random_forest(max_variables="sqrt", num_trees=10, seed=0)
+        gdf = _make_training_gdf()
+        trained = ml_fit(model, gdf, target="label")
+
+        raster = _make_raster(n_bands=3)
+        with pytest.warns(DeprecationWarning, match="feature_dim"):
+            preds = ml_predict(raster, trained, feature_dim="bands")
+
+        assert "predictions" in preds.dims
+
+    def test_deprecated_feature_dim_overrides_model(self):
+        """feature_dim= overrides model._feature_dims when supplied."""
+        model = mlm_class_random_forest(
+            max_variables="sqrt", num_trees=10, seed=0, dimension=["bands"]
+        )
+        gdf = _make_training_gdf()
+        trained = ml_fit(model, gdf, target="label")
+        # Manually clear model dims to confirm override takes effect
+        trained._feature_dims = None
+
+        raster = _make_raster(n_bands=3)
+        with pytest.warns(DeprecationWarning):
+            preds = ml_predict(raster, trained, feature_dim="bands")
+
+        assert "predictions" in preds.dims
+
     def test_default_dimension_is_bands(self):
         model = mlm_class_random_forest(max_variables="sqrt", num_trees=10)
         assert model._feature_dims == ["bands"]
