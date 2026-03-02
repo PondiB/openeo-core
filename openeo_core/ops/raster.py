@@ -249,22 +249,24 @@ def aggregate_spatial(
         geoms_crs = str(geoms.crs)
         if geoms_crs != data_crs:
             geoms = geoms.to_crs(data_crs)
-        # Filter to geometries that intersect raster bounds (avoids xvec IndexError when none overlap)
+        # Filter to geometries that intersect raster bounds using the
+        # spatial index (R-tree) for fast candidate pruning instead of a
+        # brute-force check against every geometry.
         x_min = float(data.coords[x_dim].min())
         x_max = float(data.coords[x_dim].max())
         y_min = float(data.coords[y_dim].min())
         y_max = float(data.coords[y_dim].max())
         from shapely.geometry import box
         raster_box = box(x_min, y_min, x_max, y_max)
-        mask = geoms.intersects(raster_box)
-        if not mask.any():
+        hit_idx = geoms.sindex.query(raster_box, predicate="intersects")
+        if len(hit_idx) == 0:
             raise ValueError(
                 "No training geometries intersect the raster extent. "
                 "Check that geometries and raster cover the same area (e.g. same bbox, CRS alignment)."
             )
-        geoms = geoms[mask]
+        geoms = geoms.iloc[hit_idx]
         if extra_cols is not None:
-            extra_cols = extra_cols.loc[mask]
+            extra_cols = extra_cols.iloc[hit_idx]
 
     # xvec.zonal_stats: stats="mean"|"median"|"sum"|"min"|"max"
     stats = reducer if reducer in ("mean", "median", "sum", "min", "max") else "mean"
@@ -873,12 +875,32 @@ def apply(
 
 def stack_to_samples(
     data: RasterCube,
-    feature_dim: str = "bands",
+    feature_dim: str | list[str] = "bands",
 ) -> RasterCube:
     """Stack all non-feature dims into a ``samples`` dim.
 
+    Parameters
+    ----------
+    feature_dim : str | list[str]
+        One or more dimension names that form the feature axis.  When
+        multiple names are given they are first stacked into a single
+        ``_features`` dimension so the result is always 2-D
+        ``(samples, <feature_dim>)``.
+
     Returns a 2-D DataArray with shape ``(samples, features)``.
     """
+    if isinstance(feature_dim, list):
+        if len(feature_dim) == 0:
+            raise ValueError(
+                "feature_dim must not be an empty list; "
+                "provide at least one dimension name."
+            )
+        if len(feature_dim) == 1:
+            feature_dim = feature_dim[0]
+        else:
+            data = data.stack(_features=feature_dim)
+            feature_dim = "_features"
+
     non_feature = [d for d in data.dims if d != feature_dim]
     stacked = data.stack(samples=non_feature)
     return stacked.transpose("samples", feature_dim)
@@ -887,9 +909,27 @@ def stack_to_samples(
 def unstack_from_samples(
     result: RasterCube,
     template: RasterCube,
-    feature_dim: str = "bands",
+    feature_dim: str | list[str] = "bands",
 ) -> RasterCube:
-    """Reverse :func:`stack_to_samples` using *template*'s multi-index."""
+    """Reverse :func:`stack_to_samples` using *template*'s multi-index.
+
+    Parameters
+    ----------
+    feature_dim : str | list[str]
+        Must match the value passed to :func:`stack_to_samples`.
+    """
+    if isinstance(feature_dim, list):
+        if len(feature_dim) == 0:
+            raise ValueError(
+                "feature_dim must not be an empty list; "
+                "provide at least one dimension name."
+            )
+        if len(feature_dim) == 1:
+            feature_dim = feature_dim[0]
+        else:
+            template = template.stack(_features=feature_dim)
+            feature_dim = "_features"
+
     non_feature = [d for d in template.dims if d != feature_dim]
     stacked_template = template.stack(samples=non_feature)
     result = result.assign_coords(samples=stacked_template.coords["samples"])

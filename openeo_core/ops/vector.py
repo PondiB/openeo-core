@@ -189,8 +189,8 @@ def filter_bbox(
         coord_name = _first_geom_coord_name(data)
         if coord_name is None:
             raise ValueError("xvec data has no geometry coordinate to query")
-        # Default query uses bbox intersection; predicate="contains" filters to
-        # geometries inside bbox (bbox.contains(geom))
+        # predicate="contains": bbox.contains(geom) keeps geometries
+        # that are inside the bbox
         return data.xvec.query(coord_name, bbox, predicate="contains")
 
     # xarray without xvec geometry: explicitly unsupported
@@ -200,14 +200,21 @@ def filter_bbox(
             "geometry coordinates; got an xarray object without xvec geometry."
         )
 
-    # GeoDataFrame / dask GeoDataFrame
-    if isinstance(data, gpd.GeoDataFrame) or (
-        dask_geopandas is not None
-        and isinstance(data, dask_geopandas.GeoDataFrame)
-    ):
-        mask = data.geometry.within(bbox)
-        return data.loc[mask].copy()
+    # GeoDataFrame – use spatial index for O(n·log(n)) instead of O(n) full scan
+    if isinstance(data, gpd.GeoDataFrame):
+        candidates = data.sindex.query(bbox, predicate="contains")
+        return data.iloc[candidates].copy()
 
+    # dask GeoDataFrame – apply the same spatial index query lazily per partition
+    if dask_geopandas is not None and isinstance(data, dask_geopandas.GeoDataFrame):
+        def _filter_partition_by_bbox(partition):
+            # Partition is a pandas/GeoPandas GeoDataFrame
+            if partition.empty:
+                return partition
+            candidates = partition.sindex.query(bbox, predicate="contains")
+            return partition.iloc[candidates].copy()
+
+        return data.map_partitions(_filter_partition_by_bbox)
     raise TypeError(
         f"filter_bbox only supports GeoDataFrame, dask GeoDataFrame, or xarray "
         f"DataArray/Dataset with xvec geometry; got {type(data)!r}."

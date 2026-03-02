@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import geopandas as gpd
+import pytest
 import xarray as xr
 from shapely.geometry import Point
 
@@ -151,6 +152,19 @@ class TestMLFitPredict:
         except ValueError as e:
             assert "mismatch" in str(e).lower()
 
+    def test_empty_feature_dims_raises(self):
+        model = mlm_class_random_forest(max_variables="sqrt", num_trees=10, seed=0)
+        gdf = _make_training_gdf()
+        trained = ml_fit(model, gdf, target="label")
+        trained._feature_dims = []
+
+        raster = _make_raster()
+        try:
+            ml_predict(raster, trained)
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            assert "empty list" in str(e).lower()
+
     def test_regression_fit_predict(self):
         np.random.seed(0)
         n = 50
@@ -172,6 +186,88 @@ class TestMLFitPredict:
         preds = ml_predict(raster, trained)
         assert "predictions" in preds.dims
         assert "x" in preds.dims
+
+    def test_multi_dimension_bands_and_time(self):
+        """RF with dimension=["bands", "t"] flattens both into features."""
+        np.random.seed(0)
+        n_bands, n_times = 3, 4
+        n_features = n_bands * n_times
+        n_samples = 60
+        X = np.random.rand(n_samples, n_features).astype(np.float32)
+        y = (X[:, 0] > 0.5).astype(int)
+        cols = {f"feat_{i}": X[:, i] for i in range(n_features)}
+        cols["label"] = y
+        gdf = gpd.GeoDataFrame(cols, geometry=[Point(0, 0)] * n_samples)
+
+        model = mlm_class_random_forest(
+            max_variables="sqrt", num_trees=10, seed=0,
+            dimension=["bands", "t"],
+        )
+        assert model._feature_dims == ["bands", "t"]
+        trained = ml_fit(model, gdf, target="label")
+
+        raster = xr.DataArray(
+            np.random.rand(2, n_bands, n_times, 3).astype(np.float32),
+            dims=["y", "bands", "t", "x"],
+            coords={
+                "bands": [f"b{i}" for i in range(n_bands)],
+                "t": pd.date_range("2023-01-01", periods=n_times, freq="ME"),
+                "x": [0.0, 1.0, 2.0],
+                "y": [0.0, 1.0],
+            },
+        )
+        preds = ml_predict(raster, trained)
+        assert "predictions" in preds.dims
+        assert "x" in preds.dims
+        assert "y" in preds.dims
+        assert "bands" not in preds.dims
+        assert "t" not in preds.dims
+
+    def test_deprecated_feature_dim_kwarg(self):
+        """Passing feature_dim= to ml_predict emits DeprecationWarning but still works."""
+        model = mlm_class_random_forest(max_variables="sqrt", num_trees=10, seed=0)
+        gdf = _make_training_gdf()
+        trained = ml_fit(model, gdf, target="label")
+
+        raster = _make_raster(n_bands=3)
+        with pytest.warns(DeprecationWarning, match="feature_dim"):
+            preds = ml_predict(raster, trained, feature_dim="bands")
+
+        assert "predictions" in preds.dims
+
+    def test_deprecated_feature_dim_overrides_model(self):
+        """feature_dim= overrides model._feature_dims when supplied."""
+        model = mlm_class_random_forest(
+            max_variables="sqrt", num_trees=10, seed=0, dimension=["bands"]
+        )
+        gdf = _make_training_gdf()
+        trained = ml_fit(model, gdf, target="label")
+        # Manually clear model dims to confirm override takes effect
+        trained._feature_dims = None
+
+        raster = _make_raster(n_bands=3)
+        with pytest.warns(DeprecationWarning):
+            preds = ml_predict(raster, trained, feature_dim="bands")
+
+        assert "predictions" in preds.dims
+
+    def test_default_dimension_is_bands(self):
+        model = mlm_class_random_forest(max_variables="sqrt", num_trees=10)
+        assert model._feature_dims == ["bands"]
+
+    def test_empty_dimension_raises(self):
+        with pytest.raises(ValueError, match="non-empty"):
+            mlm_class_random_forest(max_variables="sqrt", num_trees=10, dimension=[])
+
+    def test_non_string_dimension_raises(self):
+        with pytest.raises(ValueError, match="non-string"):
+            mlm_class_random_forest(max_variables="sqrt", num_trees=10, dimension=["bands", 42])
+
+    def test_dimension_is_copied(self):
+        dims = ["bands"]
+        model = mlm_class_random_forest(max_variables="sqrt", num_trees=10, dimension=dims)
+        dims.append("t")
+        assert model._feature_dims == ["bands"]
 
 
 # ---------------------------------------------------------------

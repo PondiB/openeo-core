@@ -14,7 +14,7 @@ Initialization (returns untrained ``MLModel``)::
 Training and prediction::
 
     ml_fit(model, training_set, target) -> MLModel
-    ml_predict(data, model)             -> RasterCube
+    ml_predict(data, model)             -> RasterCube  (feature dims from model)
 
 Serialisation (STAC MLM)::
 
@@ -31,6 +31,7 @@ A convenience ``Model`` class is also available for a fluent style::
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 from typing import Any, Union
 
@@ -51,10 +52,41 @@ from openeo_core.types import RasterCube, VectorCube
 # =====================================================================
 
 
+def _validate_dimension(dimension: list[str]) -> list[str]:
+    """Validate and copy the ``dimension`` parameter for MLModel factories.
+
+    Parameters
+    ----------
+    dimension:
+        The dimension list to validate.
+
+    Returns
+    -------
+    list[str]
+        A validated copy of the list.
+
+    Raises
+    ------
+    ValueError
+        If *dimension* is empty or contains non-string entries.
+    """
+    if not dimension:
+        raise ValueError(
+            "'dimension' must be a non-empty list of strings; got an empty list."
+        )
+    non_strings = [d for d in dimension if not isinstance(d, str)]
+    if non_strings:
+        raise ValueError(
+            f"'dimension' must contain only strings; got non-string entries: {non_strings!r}"
+        )
+    return list(dimension)
+
+
 def mlm_class_random_forest(
     max_variables: int | str = "sqrt",
     num_trees: int = 100,
     seed: int | None = None,
+    dimension: list[str] | None = None,
 ) -> MLModel:
     """Initialize a Random Forest **classification** model.
 
@@ -71,8 +103,17 @@ def mlm_class_random_forest(
         Number of trees (default 100).
     seed : int | None
         Random seed for reproducibility.
+    dimension : list[str] | None
+        Cube dimensions that form the feature vector at prediction time.
+        Defaults to ``["bands"]``.  Pass ``["bands", "t"]`` to flatten
+        both spectral and temporal dimensions into a single feature
+        vector per spatial sample.
     """
     from openeo_core.model.sklearn import build_random_forest_estimator
+
+    if dimension is None:
+        dimension = ["bands"]
+    dimension = _validate_dimension(dimension)
 
     hyperparams = {"max_variables": max_variables, "num_trees": num_trees, "seed": seed}
     estimator = build_random_forest_estimator(
@@ -82,7 +123,7 @@ def mlm_class_random_forest(
         seed=seed,
     )
 
-    return MLModel(
+    model = MLModel(
         name="Random Forest Classifier",
         architecture="Random Forest",
         tasks=["classification"],
@@ -97,12 +138,15 @@ def mlm_class_random_forest(
         estimator=estimator,
         backend="sklearn",
     )
+    model._feature_dims = dimension
+    return model
 
 
 def mlm_regr_random_forest(
     max_variables: int | str = "onethird",
     num_trees: int = 100,
     seed: int | None = None,
+    dimension: list[str] | None = None,
 ) -> MLModel:
     """Initialize a Random Forest **regression** model.
 
@@ -112,6 +156,10 @@ def mlm_regr_random_forest(
     """
     from openeo_core.model.sklearn import build_random_forest_estimator
 
+    if dimension is None:
+        dimension = ["bands"]
+    dimension = _validate_dimension(dimension)
+
     hyperparams = {"max_variables": max_variables, "num_trees": num_trees, "seed": seed}
     estimator = build_random_forest_estimator(
         task="regression",
@@ -120,7 +168,7 @@ def mlm_regr_random_forest(
         seed=seed,
     )
 
-    return MLModel(
+    model = MLModel(
         name="Random Forest Regressor",
         architecture="Random Forest",
         tasks=["regression"],
@@ -135,6 +183,8 @@ def mlm_regr_random_forest(
         estimator=estimator,
         backend="sklearn",
     )
+    model._feature_dims = dimension
+    return model
 
 
 def mlm_class_xgboost(
@@ -144,6 +194,7 @@ def mlm_class_xgboost(
     subsample: float = 0.8,
     min_split_loss: float = 1,
     seed: int | None = None,
+    dimension: list[str] | None = None,
 ) -> MLModel:
     """Initialize an XGBoost **classification** model.
 
@@ -164,8 +215,15 @@ def mlm_class_xgboost(
         default 1).
     seed : int | None
         Random seed.
+    dimension : list[str] | None
+        Cube dimensions that form the feature vector at prediction time.
+        Defaults to ``["bands"]``.
     """
     from openeo_core.model.xgboost_backend import build_xgboost_estimator
+
+    if dimension is None:
+        dimension = ["bands"]
+    dimension = _validate_dimension(dimension)
 
     hyperparams = {
         "learning_rate": learning_rate,
@@ -185,7 +243,7 @@ def mlm_class_xgboost(
         seed=seed,
     )
 
-    return MLModel(
+    model = MLModel(
         name="XGBoost Classifier",
         architecture="XGBoost",
         tasks=["classification"],
@@ -200,6 +258,8 @@ def mlm_class_xgboost(
         estimator=estimator,
         backend="xgboost",
     )
+    model._feature_dims = dimension
+    return model
 
 
 def mlm_class_tempcnn(
@@ -213,6 +273,7 @@ def mlm_class_tempcnn(
     optimizer: str = "adam",
     learning_rate: float = 0.001,
     seed: int | None = None,
+    dimension: list[str] | None = None,
 ) -> MLModel:
     """Initialize a TempCNN **classification** model.
 
@@ -241,8 +302,15 @@ def mlm_class_tempcnn(
         Base learning rate (default 0.001).
     seed : int | None
         Random seed for reproducibility.
+    dimension : list[str] | None
+        Cube dimensions that form the feature vector at prediction time.
+        Defaults to ``["bands", "t"]``.
     """
     from openeo_core.model.torch import build_tempcnn_estimator
+
+    if dimension is None:
+        dimension = ["bands", "t"]
+    dimension = _validate_dimension(dimension)
 
     if cnn_layers is None:
         cnn_layers = [256, 256, 256]
@@ -276,7 +344,7 @@ def mlm_class_tempcnn(
         seed=seed,
     )
 
-    return MLModel(
+    model = MLModel(
         name="TempCNN Classifier",
         architecture="TempCNN",
         tasks=["classification"],
@@ -291,6 +359,8 @@ def mlm_class_tempcnn(
         estimator=estimator,
         backend="torch",
     )
+    model._feature_dims = dimension
+    return model
 
 
 def mlm_class_lighttae(
@@ -303,6 +373,7 @@ def mlm_class_lighttae(
     lr_decay_epochs: int = 50,
     lr_decay_rate: float = 1.0,
     seed: int | None = None,
+    dimension: list[str] | None = None,
 ) -> MLModel:
     """Initialize a LightTAE **classification** model.
 
@@ -329,8 +400,15 @@ def mlm_class_lighttae(
         LR decay factor (default 1.0, i.e. no decay).
     seed : int | None
         Random seed for reproducibility.
+    dimension : list[str] | None
+        Cube dimensions that form the feature vector at prediction time.
+        Defaults to ``["bands", "t"]``.
     """
     from openeo_core.model.torch import build_lighttae_estimator
+
+    if dimension is None:
+        dimension = ["bands", "t"]
+    dimension = _validate_dimension(dimension)
 
     hyperparams = {
         "epochs": epochs,
@@ -355,7 +433,7 @@ def mlm_class_lighttae(
         seed=seed,
     )
 
-    return MLModel(
+    model = MLModel(
         name="LightTAE Classifier",
         architecture="LightTAE",
         tasks=["classification"],
@@ -370,6 +448,8 @@ def mlm_class_lighttae(
         estimator=estimator,
         backend="torch",
     )
+    model._feature_dims = dimension
+    return model
 
 
 # =====================================================================
@@ -478,12 +558,14 @@ def ml_fit(
 def ml_predict(
     data: RasterCube,
     model: MLModel,
-    *,
-    feature_dim: str = "bands",
+    feature_dim: str | list[str] | None = None,
 ) -> RasterCube:
     """Apply a trained ML model to a data cube.
 
     Implements ``ml_predict`` from the openEO process specs.
+
+    The feature dimensions are determined automatically from the model
+    (set via the ``dimension`` parameter during model initialisation).
 
     Parameters
     ----------
@@ -491,8 +573,13 @@ def ml_predict(
         Input feature data cube.
     model : MLModel
         A trained model (output of :func:`ml_fit`).
-    feature_dim : str
-        Name of the feature / bands dimension (default ``"bands"``).
+    feature_dim : str or list[str] or None, optional
+        .. deprecated::
+            Pass the feature dimension(s) via the ``dimension`` argument of
+            :func:`ml_fit` / the MLModel factory functions instead.
+            When provided here, ``feature_dim`` overrides the dimension(s)
+            stored on the model (``model._feature_dims``).  This parameter
+            will be removed in a future release.
 
     Returns
     -------
@@ -506,13 +593,35 @@ def ml_predict(
     if not model.trained:
         raise RuntimeError("Model has not been trained. Call ml_fit() first.")
 
-    template = data
-    stacked = stack_to_samples(data, feature_dim=feature_dim)
+    feat_dims: str | list[str]
+    if feature_dim is not None:
+        warnings.warn(
+            "The 'feature_dim' parameter of ml_predict() is deprecated and will be "
+            "removed in a future release.  Specify feature dimensions via the "
+            "'dimension' argument of the MLModel factory functions or ml_fit() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        feat_dims = feature_dim
+    elif model._feature_dims is None:
+        feat_dims = "bands"
+    elif len(model._feature_dims) == 0:
+        raise ValueError(
+            "_feature_dims is set to an empty list. Provide at least one feature dimension or set it to None to use the default 'bands' dimension."
+        )
+    else:
+        feat_dims = model._feature_dims
 
-    if model._n_features is not None and stacked.sizes[feature_dim] != model._n_features:
+    template = data
+    stacked = stack_to_samples(data, feature_dim=feat_dims)
+
+    # After stacking, the feature axis is either the original name or "_features"
+    feat_axis = "_features" if isinstance(feat_dims, list) and len(feat_dims) > 1 else (feat_dims[0] if isinstance(feat_dims, list) else feat_dims)
+
+    if model._n_features is not None and stacked.sizes[feat_axis] != model._n_features:
         raise ValueError(
             f"Feature count mismatch: model expects {model._n_features}, "
-            f"got {stacked.sizes[feature_dim]}"
+            f"got {stacked.sizes[feat_axis]}"
         )
 
     raw = stacked.values if not isinstance(stacked.data, da_mod.Array) else stacked.data
@@ -533,7 +642,7 @@ def ml_predict(
         result_da = xr.DataArray(preds, dims=["samples"])
 
     # Unstack back to spatial dims
-    unstacked = unstack_from_samples(result_da, template, feature_dim=feature_dim)
+    unstacked = unstack_from_samples(result_da, template, feature_dim=feat_dims)
 
     # Wrap in a "predictions" dimension per the spec
     unstacked = unstacked.expand_dims(predictions=["0"])
@@ -585,6 +694,8 @@ def save_ml_model(
         # Save the STAC Item
         stac_item = data.to_stac_item(model_href=str(model_path.name))
         stac_item["id"] = name
+        if data._feature_dims:
+            stac_item["properties"]["openeo:dimension"] = data._feature_dims
         stac_path.write_text(json.dumps(stac_item, indent=2, default=str))
 
         return True
@@ -701,6 +812,19 @@ def load_stac_ml(
             model._n_features = shape[-1]
         model._feature_names = inp.get("bands", None) or None
 
+    # Restore feature dimensions
+    feat_dims = properties.get("openeo:dimension")
+    dims: list[str] | None = None
+    if isinstance(feat_dims, str):
+        # Single dimension name as string
+        dims = [feat_dims]
+    elif isinstance(feat_dims, (list, tuple)):
+        # Sequence of dimension names – keep only non-empty strings
+        dims = [d for d in feat_dims if isinstance(d, str) and d]
+    # Only assign if we have a non-empty list of strings
+    if dims:
+        model._feature_dims = list(dims)
+
     return model
 
 
@@ -728,11 +852,18 @@ class Model:
         max_variables: int | str = "sqrt",
         num_trees: int = 100,
         seed: int | None = None,
+        dimension: list[str] | None = None,
     ) -> MLModel:
         if task == "classification":
-            return mlm_class_random_forest(max_variables=max_variables, num_trees=num_trees, seed=seed)
+            return mlm_class_random_forest(
+                max_variables=max_variables, num_trees=num_trees, seed=seed,
+                dimension=dimension,
+            )
         elif task == "regression":
-            return mlm_regr_random_forest(max_variables=max_variables, num_trees=num_trees, seed=seed)
+            return mlm_regr_random_forest(
+                max_variables=max_variables, num_trees=num_trees, seed=seed,
+                dimension=dimension,
+            )
         else:
             raise ValueError(f"Unknown task {task!r}")
 
@@ -745,6 +876,7 @@ class Model:
         subsample: float = 0.8,
         min_split_loss: float = 1,
         seed: int | None = None,
+        dimension: list[str] | None = None,
     ) -> MLModel:
         return mlm_class_xgboost(
             learning_rate=learning_rate,
@@ -753,6 +885,7 @@ class Model:
             subsample=subsample,
             min_split_loss=min_split_loss,
             seed=seed,
+            dimension=dimension,
         )
 
     @staticmethod
@@ -768,6 +901,7 @@ class Model:
         optimizer: str = "adam",
         learning_rate: float = 0.001,
         seed: int | None = None,
+        dimension: list[str] | None = None,
     ) -> MLModel:
         return mlm_class_tempcnn(
             cnn_layers=cnn_layers,
@@ -780,6 +914,7 @@ class Model:
             optimizer=optimizer,
             learning_rate=learning_rate,
             seed=seed,
+            dimension=dimension,
         )
 
     @staticmethod
@@ -794,6 +929,7 @@ class Model:
         lr_decay_epochs: int = 50,
         lr_decay_rate: float = 1.0,
         seed: int | None = None,
+        dimension: list[str] | None = None,
     ) -> MLModel:
         return mlm_class_lighttae(
             epochs=epochs,
@@ -805,6 +941,7 @@ class Model:
             lr_decay_epochs=lr_decay_epochs,
             lr_decay_rate=lr_decay_rate,
             seed=seed,
+            dimension=dimension,
         )
 
 
@@ -837,6 +974,7 @@ def _clone_model(model: MLModel) -> MLModel:
         estimator=_copy.deepcopy(model._estimator),
         backend=model._backend,
     )
+    new._feature_dims = list(model._feature_dims) if model._feature_dims is not None else None
     return new
 
 

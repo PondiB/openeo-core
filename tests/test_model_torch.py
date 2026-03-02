@@ -39,8 +39,17 @@ torch = pytest.importorskip("torch")
 # ---------------------------------------------------------------
 
 
-def _make_training_gdf(n_features: int = 10, n_samples: int = 60):
-    """GeoDataFrame with *n_features* numeric columns + a classification label."""
+N_TIMES = 4
+
+
+def _make_training_gdf(n_bands: int = 10, n_samples: int = 60):
+    """GeoDataFrame with *n_bands * N_TIMES* numeric columns + a classification label.
+
+    The feature count matches a raster with *n_bands* bands and *N_TIMES*
+    timesteps when both dimensions are flattened (the default for temporal
+    models).
+    """
+    n_features = n_bands * N_TIMES
     np.random.seed(42)
     X = np.random.rand(n_samples, n_features).astype(np.float32)
     y = (X[:, 0] > 0.5).astype(int)
@@ -52,10 +61,10 @@ def _make_training_gdf(n_features: int = 10, n_samples: int = 60):
 def _make_raster(n_bands: int = 10) -> xr.DataArray:
     np.random.seed(0)
     return xr.DataArray(
-        np.random.rand(4, n_bands, 3).astype(np.float32),
+        np.random.rand(N_TIMES, n_bands, 3).astype(np.float32),
         dims=["t", "bands", "x"],
         coords={
-            "t": pd.date_range("2023-01-01", periods=4, freq="ME"),
+            "t": pd.date_range("2023-01-01", periods=N_TIMES, freq="ME"),
             "bands": [f"f{i}" for i in range(n_bands)],
             "x": [0.0, 1.0, 2.0],
         },
@@ -148,48 +157,58 @@ class TestMLMClassLightTAE:
 
 class TestTempCNNFitPredict:
     def test_fit_returns_trained_model(self):
+        n_bands = 5
         model = mlm_class_tempcnn(epochs=3, batch_size=16, seed=0)
-        gdf = _make_training_gdf(n_features=10)
+        gdf = _make_training_gdf(n_bands=n_bands)
         trained = ml_fit(model, gdf, target="label")
 
         assert trained.trained
-        assert trained._n_features == 10
-        assert not model.trained  # original not mutated
+        assert trained._n_features == n_bands * N_TIMES
+        assert not model.trained
 
     def test_fit_updates_input_metadata(self):
+        n_bands = 4
         model = mlm_class_tempcnn(epochs=3, batch_size=16, seed=0)
-        gdf = _make_training_gdf(n_features=8)
+        gdf = _make_training_gdf(n_bands=n_bands)
         trained = ml_fit(model, gdf, target="label")
 
         inp = trained.inputs[0]
-        assert len(inp.bands) == 8
-        assert inp.input.shape == [-1, 8]
+        assert len(inp.bands) == n_bands * N_TIMES
+        assert inp.input.shape == [-1, n_bands * N_TIMES]
 
     def test_predict_returns_datacube(self):
-        n_feat = 10
+        n_bands = 5
         model = mlm_class_tempcnn(epochs=3, batch_size=16, seed=0)
-        gdf = _make_training_gdf(n_features=n_feat)
+        gdf = _make_training_gdf(n_bands=n_bands)
         trained = ml_fit(model, gdf, target="label")
 
-        raster = _make_raster(n_bands=n_feat)
+        raster = _make_raster(n_bands=n_bands)
         preds = ml_predict(raster, trained)
 
         assert "predictions" in preds.dims
-        assert "t" in preds.dims
         assert "x" in preds.dims
         assert "bands" not in preds.dims
+        assert "t" not in preds.dims
 
     def test_predict_values_are_valid_labels(self):
-        n_feat = 10
+        n_bands = 5
         model = mlm_class_tempcnn(epochs=5, batch_size=16, seed=0)
-        gdf = _make_training_gdf(n_features=n_feat)
+        gdf = _make_training_gdf(n_bands=n_bands)
         trained = ml_fit(model, gdf, target="label")
 
-        raster = _make_raster(n_bands=n_feat)
+        raster = _make_raster(n_bands=n_bands)
         preds = ml_predict(raster, trained)
 
         unique = np.unique(preds.values)
         assert all(v in [0, 1] for v in unique)
+
+    def test_default_dimension(self):
+        model = mlm_class_tempcnn(epochs=2)
+        assert model._feature_dims == ["bands", "t"]
+
+    def test_custom_dimension(self):
+        model = mlm_class_tempcnn(epochs=2, dimension=["bands"])
+        assert model._feature_dims == ["bands"]
 
 
 # ---------------------------------------------------------------
@@ -199,39 +218,48 @@ class TestTempCNNFitPredict:
 
 class TestLightTAEFitPredict:
     def test_fit_returns_trained_model(self):
+        n_bands = 5
         model = mlm_class_lighttae(epochs=3, batch_size=16, seed=0)
-        gdf = _make_training_gdf(n_features=10)
+        gdf = _make_training_gdf(n_bands=n_bands)
         trained = ml_fit(model, gdf, target="label")
 
         assert trained.trained
-        assert trained._n_features == 10
+        assert trained._n_features == n_bands * N_TIMES
         assert not model.trained
 
     def test_predict_returns_datacube(self):
-        n_feat = 10
+        n_bands = 5
         model = mlm_class_lighttae(epochs=3, batch_size=16, seed=0)
-        gdf = _make_training_gdf(n_features=n_feat)
+        gdf = _make_training_gdf(n_bands=n_bands)
         trained = ml_fit(model, gdf, target="label")
 
-        raster = _make_raster(n_bands=n_feat)
+        raster = _make_raster(n_bands=n_bands)
         preds = ml_predict(raster, trained)
 
         assert "predictions" in preds.dims
-        assert "t" in preds.dims
         assert "x" in preds.dims
         assert "bands" not in preds.dims
+        assert "t" not in preds.dims
 
     def test_predict_values_are_valid_labels(self):
-        n_feat = 10
+        n_bands = 5
         model = mlm_class_lighttae(epochs=5, batch_size=16, seed=0)
-        gdf = _make_training_gdf(n_features=n_feat)
+        gdf = _make_training_gdf(n_bands=n_bands)
         trained = ml_fit(model, gdf, target="label")
 
-        raster = _make_raster(n_bands=n_feat)
+        raster = _make_raster(n_bands=n_bands)
         preds = ml_predict(raster, trained)
 
         unique = np.unique(preds.values)
         assert all(v in [0, 1] for v in unique)
+
+    def test_default_dimension(self):
+        model = mlm_class_lighttae(epochs=2)
+        assert model._feature_dims == ["bands", "t"]
+
+    def test_custom_dimension(self):
+        model = mlm_class_lighttae(epochs=2, dimension=["bands"])
+        assert model._feature_dims == ["bands"]
 
 
 # ---------------------------------------------------------------
@@ -247,11 +275,12 @@ class TestErrorHandling:
             ml_predict(raster, model)
 
     def test_feature_mismatch_raises(self):
+        n_bands = 5
         model = mlm_class_tempcnn(epochs=3, batch_size=16, seed=0)
-        gdf = _make_training_gdf(n_features=10)
+        gdf = _make_training_gdf(n_bands=n_bands)
         trained = ml_fit(model, gdf, target="label")
 
-        raster = _make_raster(n_bands=5)
+        raster = _make_raster(n_bands=n_bands + 2)
         with pytest.raises(ValueError, match="mismatch"):
             ml_predict(raster, trained)
 
@@ -298,8 +327,9 @@ class TestSTACMLMMetadata:
 
 class TestSaveLoadRoundTrip:
     def test_tempcnn_save_and_load(self):
+        n_bands = 5
         model = mlm_class_tempcnn(epochs=3, batch_size=16, seed=0)
-        gdf = _make_training_gdf(n_features=10)
+        gdf = _make_training_gdf(n_bands=n_bands)
         trained = ml_fit(model, gdf, target="label")
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -318,13 +348,14 @@ class TestSaveLoadRoundTrip:
             assert loaded.trained
             assert loaded.framework == "PyTorch"
 
-            raster = _make_raster(n_bands=10)
+            raster = _make_raster(n_bands=n_bands)
             preds = ml_predict(raster, loaded)
             assert "predictions" in preds.dims
 
     def test_lighttae_save_and_load(self):
+        n_bands = 5
         model = mlm_class_lighttae(epochs=3, batch_size=16, seed=0)
-        gdf = _make_training_gdf(n_features=10)
+        gdf = _make_training_gdf(n_bands=n_bands)
         trained = ml_fit(model, gdf, target="label")
 
         with tempfile.TemporaryDirectory() as tmpdir:
