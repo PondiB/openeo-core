@@ -412,6 +412,93 @@ class DataCube:
             _ail(self._data, dimension=dimension)  # type: ignore[arg-type]
         )
 
+    def mask(
+        self,
+        mask: "DataCube | Any",
+        *,
+        replacement: float | bool | str | None = None,
+    ) -> "DataCube":
+        """Apply a raster mask to this data cube.
+
+        Pixels where *mask* is non-zero (numbers) or ``True`` (booleans)
+        are replaced with *replacement* (default: no-data / ``NaN``).
+
+        Parameters
+        ----------
+        mask : DataCube | RasterCube
+            Raster mask.  If a ``DataCube``, its underlying data is extracted.
+        replacement : float | bool | str | None
+            Value for masked pixels.  ``None`` uses ``NaN``.
+        """
+        self._assert_raster("mask")
+        from openeo_core.ops.raster import mask as _mask
+
+        mask_data = mask.data if isinstance(mask, DataCube) else mask
+        return DataCube(_mask(self._data, mask_data, replacement=replacement))  # type: ignore[arg-type]
+
+    def mask_polygon(
+        self,
+        mask: Any,
+        *,
+        replacement: float | bool | str | None = None,
+        inside: bool = False,
+        x_dim: str = "longitude",
+        y_dim: str = "latitude",
+    ) -> "DataCube":
+        """Apply a polygon mask to this raster data cube.
+
+        Pixels outside the polygon(s) are replaced with *replacement*.
+        Set *inside* to ``True`` to replace pixels inside instead.
+
+        Parameters
+        ----------
+        mask : GeoJSON dict | GeoDataFrame | shapely geometry
+            Polygon(s) defining the mask region.
+        replacement : float | bool | str | None
+            Value for masked pixels.  ``None`` uses ``NaN``.
+        inside : bool
+            If ``True``, replace pixels inside the polygons.
+        """
+        self._assert_raster("mask_polygon")
+        from openeo_core.ops.raster import mask_polygon as _mp
+
+        return DataCube(
+            _mp(
+                self._data,  # type: ignore[arg-type]
+                mask,
+                replacement=replacement,
+                inside=inside,
+                x_dim=x_dim,
+                y_dim=y_dim,
+            )
+        )
+
+    def cloud_detection(
+        self,
+        *,
+        method: str | None = None,
+        options: dict | None = None,
+        bands_dim: str = "bands",
+    ) -> "DataCube":
+        """Detect clouds and return probability masks.
+
+        Parameters
+        ----------
+        method : str | None
+            Detection method.  ``None`` lets the backend choose
+            (currently defaults to ``"s2cloudless"``).
+        options : dict | None
+            Proprietary options for the detection method.
+        bands_dim : str
+            Name of the bands dimension.
+        """
+        self._assert_raster("cloud_detection")
+        from openeo_core.ops.raster import cloud_detection as _cd
+
+        return DataCube(
+            _cd(self._data, method=method, options=options, bands_dim=bands_dim)  # type: ignore[arg-type]
+        )
+
     # ------------------------------------------------------------------
     # Vector operations
     # ------------------------------------------------------------------

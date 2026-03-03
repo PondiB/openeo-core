@@ -51,11 +51,13 @@ Changelog = "https://github.com/PondiB/openeo-core/releases"
 ml-sklearn = ["scikit-learn>=1.7.2", "joblib>=1.5.3"]
 ml-xgboost = ["xgboost>=3.2.0"]
 ml-torch = ["torch>=2.2.0", "torch-optimizer>=0.3.0"]
+optical = ["s2cloudless>=1.7.0"]
 all = [
     "scikit-learn>=1.7.2",
     "xgboost>=3.2.0",
     "torch>=2.2.0",
     "torch-optimizer>=0.3.0",
+    "s2cloudless>=1.7.0",
 ]
 dev = [
     "pytest>=9.0.2",
@@ -64,6 +66,7 @@ dev = [
     "xgboost>=3.2.0",
     "torch>=2.2.0",
     "torch-optimizer>=0.3.0",
+    "s2cloudless>=1.7.0",
 ]
 
 [build-system]

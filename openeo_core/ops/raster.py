@@ -13,6 +13,7 @@ from openeo_core.exceptions import (
     BandExists,
     DimensionAmbiguous,
     DimensionNotAvailable,
+    IncompatibleDataCubes,
     KernelDimensionsUneven,
     NirBandAmbiguous,
     RedBandAmbiguous,
@@ -1181,4 +1182,561 @@ def apply_kernel(
         output_dtypes=[data.dtype],
     )
 
+    return result
+
+
+# ---------------------------------------------------------------------------
+# mask (raster mask)
+# ---------------------------------------------------------------------------
+
+
+def mask(
+    data: RasterCube,
+    mask_cube: RasterCube,
+    *,
+    replacement: float | bool | str | None = None,
+) -> RasterCube:
+    """Apply a raster mask to a raster data cube.
+
+    Implements the ``mask`` openEO process.  Pixels in *data* whose
+    corresponding values in *mask_cube* are non-zero (for numbers) or
+    ``True`` (for booleans) are replaced with *replacement*.  No-data
+    values in *data* are left untouched.
+
+    Dimensions present in *data* but missing from *mask_cube* cause the
+    mask to broadcast (apply identically to every label along the missing
+    dimension).  All dimensions that exist in *mask_cube* must also exist
+    in *data* with compatible labels.
+
+    Parameters
+    ----------
+    data : RasterCube
+        Input raster data cube.
+    mask_cube : RasterCube
+        A raster data cube used as mask.
+    replacement : float | bool | str | None
+        Value to substitute for masked pixels.  ``None`` uses ``NaN``.
+
+    Raises
+    ------
+    IncompatibleDataCubes
+        If the data cube and the mask have incompatible dimensions or labels.
+    """
+    _validate_mask_dimensions(data, mask_cube)
+
+    fill_value: float | bool | str = np.nan if replacement is None else replacement
+
+    # Build the boolean condition: True where mask is "active" (non-zero / True).
+    if np.issubdtype(mask_cube.dtype, np.bool_):
+        is_masked = mask_cube
+    else:
+        is_masked = mask_cube != 0
+
+    # Preserve existing no-data (NaN) in *data*: only replace where data
+    # is not already NaN.
+    result = xr.where(is_masked, fill_value, data)
+
+    # Restore original NaN positions so no-data values are untouched.
+    result = xr.where(np.isnan(data), np.nan, result)
+
+    return result
+
+
+def _validate_mask_dimensions(data: RasterCube, mask_cube: RasterCube) -> None:
+    """Validate that *mask_cube* dimensions are compatible with *data*."""
+    for dim in mask_cube.dims:
+        if dim not in data.dims:
+            raise IncompatibleDataCubes(
+                f"The mask has dimension '{dim}' which is not present in the "
+                f"data cube.  Data dimensions: {list(data.dims)}"
+            )
+        mask_labels = mask_cube.coords[dim].values
+        data_labels = data.coords[dim].values
+        if len(mask_labels) != len(data_labels) or not np.array_equal(
+            mask_labels, data_labels
+        ):
+            raise IncompatibleDataCubes(
+                f"Dimension '{dim}' has incompatible labels between the data "
+                f"cube and the mask."
+            )
+
+
+# ---------------------------------------------------------------------------
+# mask_polygon
+# ---------------------------------------------------------------------------
+
+
+def mask_polygon(
+    data: RasterCube,
+    mask_geom: Any,
+    *,
+    replacement: float | bool | str | None = None,
+    inside: bool = False,
+    x_dim: str = "longitude",
+    y_dim: str = "latitude",
+) -> RasterCube:
+    """Apply a polygon mask to a raster data cube.
+
+    Implements the ``mask_polygon`` openEO process.  All pixels whose
+    centre does **not** intersect with any of the provided polygons are
+    replaced with *replacement* (default: ``NaN``).  Setting *inside* to
+    ``True`` inverts the behaviour so that pixels **inside** the polygons
+    are replaced instead.
+
+    No-data values already present in *data* are left untouched.
+
+    Parameters
+    ----------
+    data : RasterCube
+        Input raster data cube with spatial dimensions.
+    mask_geom : GeoJSON dict | GeoDataFrame | shapely geometry
+        One or more polygons defining the mask region.
+    replacement : float | bool | str | None
+        Value for masked pixels.  ``None`` uses ``NaN``.
+    inside : bool
+        If ``True``, replace pixels **inside** the polygons instead of
+        outside.
+    x_dim, y_dim : str
+        Names of the spatial dimensions.
+
+    Raises
+    ------
+    DimensionNotAvailable
+        If the spatial dimensions are missing.
+    """
+    from rasterio.features import geometry_mask
+    from rasterio.transform import from_bounds
+    from shapely.geometry import shape
+
+    for dim in (y_dim, x_dim):
+        if dim not in data.dims:
+            raise DimensionNotAvailable(
+                f"A dimension with the specified name '{dim}' does not exist. "
+                f"Available dimensions: {list(data.dims)}"
+            )
+
+    fill_value: float | bool | str = np.nan if replacement is None else replacement
+
+    # --- Normalise mask_geom into a list of shapely geometries ---
+    geometries = _extract_geometries(mask_geom, shape)
+
+    x_coords = data.coords[x_dim].values
+    y_coords = data.coords[y_dim].values
+    nx, ny = len(x_coords), len(y_coords)
+
+    x_min, x_max = float(x_coords.min()), float(x_coords.max())
+    y_min, y_max = float(y_coords.min()), float(y_coords.max())
+
+    # Determine pixel ordering: rasterio expects the transform to go
+    # from top-left, but the y-axis may be ascending or descending.
+    y_ascending = y_coords[0] < y_coords[-1]
+    if y_ascending:
+        transform = from_bounds(x_min, y_min, x_max, y_max, nx, ny)
+    else:
+        transform = from_bounds(x_min, y_max, x_max, y_min, nx, ny)
+
+    # geometry_mask returns True where pixels are OUTSIDE the geometries.
+    outside_mask = geometry_mask(
+        geometries,
+        out_shape=(ny, nx),
+        transform=transform,
+        invert=False,
+    )
+    if y_ascending:
+        outside_mask = outside_mask[::-1, :]
+
+    outside_da = xr.DataArray(
+        outside_mask,
+        dims=[y_dim, x_dim],
+        coords={y_dim: y_coords, x_dim: x_coords},
+    )
+
+    # Decide which pixels to replace.
+    if inside:
+        should_replace = ~outside_da
+    else:
+        should_replace = outside_da
+
+    result = xr.where(should_replace, fill_value, data)
+    # Restore original NaN positions.
+    result = xr.where(np.isnan(data), np.nan, result)
+
+    return result
+
+
+def _extract_geometries(mask_geom: Any, shape_fn: Any) -> list:
+    """Normalise *mask_geom* into a list of shapely geometries."""
+    import geopandas as gpd
+
+    if isinstance(mask_geom, gpd.GeoDataFrame):
+        return list(mask_geom.geometry)
+    if isinstance(mask_geom, gpd.GeoSeries):
+        return list(mask_geom)
+
+    # Shapely geometry (Polygon, MultiPolygon, etc.)
+    try:
+        from shapely.geometry.base import BaseGeometry
+        if isinstance(mask_geom, BaseGeometry):
+            return [mask_geom]
+    except ImportError:
+        pass
+
+    # GeoJSON dict
+    if isinstance(mask_geom, dict):
+        geom_type = mask_geom.get("type", "")
+        if geom_type in ("Polygon", "MultiPolygon"):
+            return [shape_fn(mask_geom)]
+        if geom_type == "Feature":
+            return [shape_fn(mask_geom["geometry"])]
+        if geom_type == "FeatureCollection":
+            return [
+                shape_fn(f["geometry"])
+                for f in mask_geom.get("features", [])
+                if f.get("geometry") is not None
+            ]
+
+    raise TypeError(
+        f"mask_polygon expects a GeoJSON dict, GeoDataFrame, or shapely geometry; "
+        f"got {type(mask_geom)!r}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# cloud_detection
+# ---------------------------------------------------------------------------
+
+
+def cloud_detection(
+    data: RasterCube,
+    *,
+    method: str | None = None,
+    options: dict | None = None,
+    bands_dim: str = "bands",
+) -> RasterCube:
+    """Detect clouds and create probability masks.
+
+    Implements the ``cloud_detection`` openEO process (experimental).
+
+    Supported methods:
+
+    * ``"s2cloudless"`` -- ML-based cloud probability for **Sentinel-2**
+      data.  Requires the ``s2cloudless`` package and the 10 S2 TOA bands
+      (B01, B02, B04, B05, B08, B8A, B09, B10, B11, B12).
+    * ``"Fmask"`` -- Decodes the ``QA_PIXEL`` quality band shipped with
+      **Landsat Collection 2** (Levels 1 & 2) data.  Produces ``cloud``
+      and ``shadow`` probability bands derived from CFMask confidence
+      bits.  No extra dependencies required.
+
+    When *method* is ``None`` the backend is chosen automatically based
+    on the bands present in *data*: if ``QA_PIXEL`` is found it uses
+    Fmask; if S2-style bands are found it uses s2cloudless.
+
+    Parameters
+    ----------
+    data : RasterCube
+        Multi-spectral raster cube with a *bands* dimension.
+    method : str | None
+        Cloud detection method (``"s2cloudless"``, ``"Fmask"``, or
+        ``None`` for auto-detection).
+    options : dict | None
+        Proprietary options forwarded to the detection backend.
+    bands_dim : str
+        Name of the bands dimension.
+
+    Returns
+    -------
+    RasterCube
+        Data cube with ``"cloud"`` (and possibly ``"shadow"``) bands
+        containing per-pixel probabilities between 0 (clear) and 1.
+
+    Raises
+    ------
+    DimensionNotAvailable
+        If *bands_dim* is missing.
+    ValueError
+        If *method* is not supported or the required bands are missing.
+    """
+    if bands_dim not in data.dims:
+        raise DimensionNotAvailable(
+            f"A dimension with the specified name '{bands_dim}' does not exist. "
+            f"Available dimensions: {list(data.dims)}"
+        )
+
+    opts = options or {}
+    band_labels = list(data.coords[bands_dim].values)
+
+    effective_method = method
+    if effective_method is None:
+        effective_method = _auto_detect_cloud_method(band_labels)
+
+    if effective_method == "s2cloudless":
+        return _cloud_detection_s2cloudless(data, bands_dim=bands_dim, options=opts)
+
+    if effective_method == "Fmask":
+        return _cloud_detection_fmask(data, bands_dim=bands_dim, options=opts)
+
+    if effective_method == "Sen2Cor":
+        raise ValueError(
+            "Cloud detection method 'Sen2Cor' is not yet implemented. "
+            "Use 's2cloudless' for Sentinel-2 data or 'Fmask' for Landsat data."
+        )
+
+    raise ValueError(
+        f"Cloud detection method {effective_method!r} is not supported. "
+        f"Supported methods: 's2cloudless' (Sentinel-2), 'Fmask' (Landsat)."
+    )
+
+
+_SUPPORTED_METHODS = ("s2cloudless", "Fmask", "Sen2Cor")
+
+# Landsat Collection 2 QA_PIXEL band name.
+_LANDSAT_QA_BAND = "QA_PIXEL"
+
+# Common Landsat band names (Collection 2 Level-2 surface reflectance).
+_LANDSAT_BAND_PREFIXES = ("SR_B", "ST_B", "QA_PIXEL", "QA_RADSAT")
+
+
+def _auto_detect_cloud_method(band_labels: list[str]) -> str:
+    """Choose a cloud detection backend based on available bands.
+
+    Returns ``"Fmask"`` when ``QA_PIXEL`` (Landsat Collection 2) is
+    present, ``"s2cloudless"`` when Sentinel-2 bands are found, or
+    raises ``ValueError`` if neither sensor can be identified.
+    """
+    if _LANDSAT_QA_BAND in band_labels:
+        return "Fmask"
+
+    s2_present = sum(1 for b in _S2CLOUDLESS_BANDS if b in band_labels)
+    if s2_present >= 6:
+        return "s2cloudless"
+
+    if any(b.startswith("SR_B") for b in band_labels):
+        raise ValueError(
+            "Landsat data detected but 'QA_PIXEL' band is missing. "
+            "Include the QA_PIXEL band or explicitly set method='Fmask'."
+        )
+
+    raise ValueError(
+        "Cannot auto-detect cloud detection method. The data cube does not "
+        "contain recognised Sentinel-2 or Landsat bands. "
+        "Available bands: " + str(band_labels) + ". "
+        "Specify method='s2cloudless' or method='Fmask' explicitly."
+    )
+
+
+_S2CLOUDLESS_BANDS = [
+    "B01", "B02", "B04", "B05", "B08", "B8A", "B09", "B10", "B11", "B12",
+]
+
+
+def _cloud_detection_s2cloudless(
+    data: RasterCube,
+    *,
+    bands_dim: str,
+    options: dict,
+) -> RasterCube:
+    """Run s2cloudless cloud probability prediction.
+
+    The s2cloudless library expects reflectance values in [0, 1] with
+    shape ``(n_timestamps, height, width, n_bands)`` where the 10 bands
+    are B01, B02, B04, B05, B08, B8A, B09, B10, B11, B12.
+    """
+    try:
+        from s2cloudless import S2PixelCloudDetector
+    except ImportError:
+        raise ImportError(
+            "cloud_detection with method='s2cloudless' requires the s2cloudless "
+            "package.  Install it with:  pip install s2cloudless"
+        )
+
+    band_labels = list(data.coords[bands_dim].values)
+    missing = [b for b in _S2CLOUDLESS_BANDS if b not in band_labels]
+    if missing:
+        raise ValueError(
+            f"The following bands required by s2cloudless are missing: {missing}. "
+            f"Available bands: {band_labels}"
+        )
+
+    # Select the required bands in order
+    subset = data.sel({bands_dim: _S2CLOUDLESS_BANDS})
+
+    # Identify spatial dims (the two dims that are not bands_dim and not 'time')
+    all_dims = list(subset.dims)
+    non_band_dims = [d for d in all_dims if d != bands_dim]
+    has_time = "time" in non_band_dims
+    spatial_dims = [d for d in non_band_dims if d != "time"]
+
+    if len(spatial_dims) != 2:
+        raise ValueError(
+            f"Expected exactly 2 spatial dimensions, found {spatial_dims}."
+        )
+
+    y_dim_name, x_dim_name = spatial_dims[0], spatial_dims[1]
+
+    threshold = options.get("threshold", 0.4)
+    average_over = options.get("average_over", 4)
+    dilation_size = options.get("dilation_size", 2)
+    cloud_detector = S2PixelCloudDetector(
+        threshold=threshold,
+        average_over=average_over,
+        dilation_size=dilation_size,
+        all_bands=False,
+    )
+
+    # Materialise if dask-backed (s2cloudless works on numpy arrays)
+    vals = subset.values if not hasattr(subset, "compute") else subset.compute().values
+
+    if has_time:
+        # Transpose to (time, y, x, bands)
+        target_order = ["time", y_dim_name, x_dim_name, bands_dim]
+        subset_ordered = subset.transpose(*target_order)
+        arr = subset_ordered.values if not hasattr(subset_ordered, "compute") else subset_ordered.compute().values
+
+        # s2cloudless expects reflectance in [0, 1]; if data looks like
+        # integer reflectance (> 1), normalise.
+        if np.nanmax(arr) > 10:
+            arr = arr / 10000.0
+
+        cloud_probs = cloud_detector.get_cloud_probability_maps(arr)
+        # cloud_probs shape: (time, y, x)
+        result = xr.DataArray(
+            cloud_probs,
+            dims=["time", y_dim_name, x_dim_name],
+            coords={
+                "time": data.coords["time"],
+                y_dim_name: data.coords[y_dim_name],
+                x_dim_name: data.coords[x_dim_name],
+            },
+        )
+    else:
+        # Single timestamp: shape (1, y, x, bands) for s2cloudless
+        target_order = [y_dim_name, x_dim_name, bands_dim]
+        subset_ordered = subset.transpose(*target_order)
+        arr = subset_ordered.values if not hasattr(subset_ordered, "compute") else subset_ordered.compute().values
+
+        if np.nanmax(arr) > 10:
+            arr = arr / 10000.0
+
+        arr_4d = arr[np.newaxis, ...]  # (1, y, x, bands)
+        cloud_probs = cloud_detector.get_cloud_probability_maps(arr_4d)
+        # cloud_probs shape: (1, y, x) -> squeeze to (y, x)
+        result = xr.DataArray(
+            cloud_probs[0],
+            dims=[y_dim_name, x_dim_name],
+            coords={
+                y_dim_name: data.coords[y_dim_name],
+                x_dim_name: data.coords[x_dim_name],
+            },
+        )
+
+    # Add a bands dimension with label "cloud"
+    result = result.expand_dims({bands_dim: ["cloud"]})
+    result = result.clip(0, 1)
+
+    return result
+
+
+# -- Fmask backend (Landsat Collection 2 QA_PIXEL) ---------------------------
+
+# Landsat Collection 2 QA_PIXEL bit positions (0-indexed).
+# See: https://www.usgs.gov/landsat-missions/landsat-collection-2-quality-assessment-bands
+_QA_BIT_CLOUD = 3          # Bit 3: Cloud
+_QA_BIT_CLOUD_SHADOW = 4   # Bit 4: Cloud Shadow
+_QA_BITS_CLOUD_CONF = (8, 9)    # Bits 8-9: Cloud Confidence (0-3)
+_QA_BITS_SHADOW_CONF = (10, 11)  # Bits 10-11: Cloud Shadow Confidence (0-3)
+
+
+def _decode_qa_confidence(qa: np.ndarray, bit_low: int, bit_high: int) -> np.ndarray:
+    """Extract a 2-bit confidence field from QA_PIXEL and normalise to [0, 1].
+
+    Confidence levels: 0=None/Not-determined, 1=Low, 2=Medium, 3=High.
+    Normalised as ``level / 3.0`` so that High → 1.0.
+    """
+    mask_bits = (1 << (bit_high - bit_low + 1)) - 1  # 0b11 for 2-bit field
+    level = (qa >> bit_low).astype(np.int32) & mask_bits
+    return level.astype(np.float32) / 3.0
+
+
+def _cloud_detection_fmask(
+    data: RasterCube,
+    *,
+    bands_dim: str,
+    options: dict,
+) -> RasterCube:
+    """Decode Landsat Collection 2 QA_PIXEL into cloud/shadow probabilities.
+
+    The QA_PIXEL band is a 16-bit bitmask produced by CFMask and shipped
+    with Landsat Collection 2 Level-1 and Level-2 products.  This
+    function extracts cloud and cloud-shadow confidence values and
+    returns them as probability bands in [0, 1].
+
+    Supported *options*:
+
+    * ``include_shadow`` (bool, default ``True``) -- whether to include a
+      ``"shadow"`` band in the output.
+    """
+    band_labels = list(data.coords[bands_dim].values)
+    if _LANDSAT_QA_BAND not in band_labels:
+        raise ValueError(
+            f"Fmask method requires a '{_LANDSAT_QA_BAND}' band. "
+            f"Available bands: {band_labels}"
+        )
+
+    include_shadow = options.get("include_shadow", True)
+
+    qa = data.sel({bands_dim: _LANDSAT_QA_BAND})
+    # Materialise if dask-backed
+    if hasattr(qa, "compute") and hasattr(qa.data, "dask"):
+        qa = qa.compute()
+    qa_arr = qa.values.astype(np.uint16)
+
+    cloud_prob = _decode_qa_confidence(qa_arr, *_QA_BITS_CLOUD_CONF)
+
+    # Identify spatial dims
+    all_dims = list(qa.dims)
+    has_time = "time" in all_dims
+    spatial_dims = [d for d in all_dims if d != "time"]
+
+    if len(spatial_dims) != 2:
+        raise ValueError(
+            f"Expected exactly 2 spatial dimensions, found {spatial_dims}."
+        )
+
+    y_dim_name, x_dim_name = spatial_dims[0], spatial_dims[1]
+
+    out_bands = ["cloud"]
+    prob_slices = [cloud_prob]
+
+    if include_shadow:
+        shadow_prob = _decode_qa_confidence(qa_arr, *_QA_BITS_SHADOW_CONF)
+        out_bands.append("shadow")
+        prob_slices.append(shadow_prob)
+
+    if has_time:
+        # Stack along new bands axis: (n_bands, time, y, x)
+        stacked = np.stack(prob_slices, axis=0)
+        result = xr.DataArray(
+            stacked,
+            dims=[bands_dim, "time", y_dim_name, x_dim_name],
+            coords={
+                bands_dim: out_bands,
+                "time": data.coords["time"],
+                y_dim_name: data.coords[y_dim_name],
+                x_dim_name: data.coords[x_dim_name],
+            },
+        )
+    else:
+        # (n_bands, y, x)
+        stacked = np.stack(prob_slices, axis=0)
+        result = xr.DataArray(
+            stacked,
+            dims=[bands_dim, y_dim_name, x_dim_name],
+            coords={
+                bands_dim: out_bands,
+                y_dim_name: data.coords[y_dim_name],
+                x_dim_name: data.coords[x_dim_name],
+            },
+        )
+
+    result = result.clip(0, 1)
     return result
