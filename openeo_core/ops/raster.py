@@ -1195,6 +1195,8 @@ def mask(
     mask_cube: RasterCube,
     *,
     replacement: float | bool | str | None = None,
+    x_dim: str = "longitude",
+    y_dim: str = "latitude",
 ) -> RasterCube:
     """Apply a raster mask to a raster data cube.
 
@@ -1208,6 +1210,12 @@ def mask(
     dimension).  All dimensions that exist in *mask_cube* must also exist
     in *data* with compatible labels.
 
+    Horizontal spatial dimensions (*x_dim* / *y_dim*) that are present in
+    *mask_cube* but whose coordinate labels do not exactly match those of
+    *data* are aligned implicitly by nearest-neighbour resampling of the
+    mask to *data*'s spatial grid (equivalent to ``resample_cube_spatial``).
+    Non-spatial dimensions must have exactly matching coordinate labels.
+
     Parameters
     ----------
     data : RasterCube
@@ -1216,13 +1224,19 @@ def mask(
         A raster data cube used as mask.
     replacement : float | bool | str | None
         Value to substitute for masked pixels.  ``None`` uses ``NaN``.
+    x_dim : str
+        Name of the horizontal x spatial dimension.  Default ``"longitude"``.
+    y_dim : str
+        Name of the horizontal y spatial dimension.  Default ``"latitude"``.
 
     Raises
     ------
     IncompatibleDataCubes
-        If the data cube and the mask have incompatible dimensions or labels.
+        If the data cube and the mask have incompatible dimensions or labels
+        (non-spatial dimensions only).
     """
-    _validate_mask_dimensions(data, mask_cube)
+    _validate_mask_dimensions(data, mask_cube, x_dim=x_dim, y_dim=y_dim)
+    mask_cube = _align_mask_spatially(data, mask_cube, x_dim=x_dim, y_dim=y_dim)
 
     fill_value: float | bool | str = np.nan if replacement is None else replacement
 
@@ -1237,20 +1251,36 @@ def mask(
     result = xr.where(is_masked, fill_value, data)
 
     # Restore original missing-data positions so no-data values are untouched.
-    missing = xr.isnull(data)
+    missing = data.isnull()
     result = xr.where(missing, data, result)
 
     return result
 
 
-def _validate_mask_dimensions(data: RasterCube, mask_cube: RasterCube) -> None:
-    """Validate that *mask_cube* dimensions are compatible with *data*."""
+def _validate_mask_dimensions(
+    data: RasterCube,
+    mask_cube: RasterCube,
+    *,
+    x_dim: str = "longitude",
+    y_dim: str = "latitude",
+) -> None:
+    """Validate that *mask_cube* dimensions are compatible with *data*.
+
+    Spatial dimensions (*x_dim* / *y_dim*) are exempt from strict label
+    matching because they are aligned implicitly by
+    :func:`_align_mask_spatially`.  All other dimensions must have
+    exactly matching coordinate labels.
+    """
+    spatial_dims = {x_dim, y_dim}
     for dim in mask_cube.dims:
         if dim not in data.dims:
             raise IncompatibleDataCubes(
                 f"The mask has dimension '{dim}' which is not present in the "
                 f"data cube.  Data dimensions: {list(data.dims)}"
             )
+        # Spatial dims are aligned implicitly; only validate non-spatial dims.
+        if dim in spatial_dims:
+            continue
         mask_labels = mask_cube.coords[dim].values
         data_labels = data.coords[dim].values
         if len(mask_labels) != len(data_labels) or not np.array_equal(
@@ -1260,6 +1290,40 @@ def _validate_mask_dimensions(data: RasterCube, mask_cube: RasterCube) -> None:
                 f"Dimension '{dim}' has incompatible labels between the data "
                 f"cube and the mask."
             )
+
+
+def _align_mask_spatially(
+    data: RasterCube,
+    mask_cube: RasterCube,
+    *,
+    x_dim: str = "longitude",
+    y_dim: str = "latitude",
+) -> RasterCube:
+    """Resample *mask_cube* spatial dims to match *data* where they differ.
+
+    Uses nearest-neighbour selection so the mask value type (including
+    boolean) is preserved without any arithmetic interpolation.
+    """
+    interp_kwargs: dict[str, Any] = {}
+    for dim in (x_dim, y_dim):
+        if dim not in mask_cube.dims or dim not in data.dims:
+            continue
+        mask_coords = mask_cube.coords[dim].values
+        data_coords = data.coords[dim].values
+        if not np.array_equal(mask_coords, data_coords):
+            interp_kwargs[dim] = data.coords[dim]
+
+    if not interp_kwargs:
+        return mask_cube
+
+    # Cast bool masks to float before interpolation (interp requires numeric
+    # dtype), then restore the original dtype afterwards.
+    is_bool = np.issubdtype(mask_cube.dtype, np.bool_)
+    work = mask_cube.astype(float) if is_bool else mask_cube
+    result = work.interp(**interp_kwargs, method="nearest")
+    if is_bool:
+        result = result.astype(bool)
+    return result
 
 
 # ---------------------------------------------------------------------------

@@ -685,7 +685,7 @@ class TestMask:
         assert np.isnan(result.values[1, 0, 0, 0])
 
     def test_mask_incompatible_raises(self):
-        """Mismatched dimension labels raise IncompatibleDataCubes."""
+        """Mismatched non-spatial dimension labels raise IncompatibleDataCubes."""
         cube = _make_raster()
         mask_data = xr.DataArray(
             np.zeros((2, 4, 4), dtype=np.float32),
@@ -698,6 +698,65 @@ class TestMask:
         )
         with pytest.raises(IncompatibleDataCubes, match="incompatible labels"):
             raster_mask(cube, mask_data)
+
+    def test_mask_spatial_misalignment_auto_aligned(self):
+        """Mask with different spatial coords is auto-aligned via nearest-neighbour."""
+        cube = _make_raster()
+        # Create a mask with shifted spatial coords (half-pixel offset)
+        lat = cube.coords["latitude"].values
+        lon = cube.coords["longitude"].values
+        step_lat = lat[1] - lat[0]
+        step_lon = lon[1] - lon[0]
+        shifted_lat = lat + step_lat * 0.3
+        shifted_lon = lon + step_lon * 0.3
+        mask_data = xr.DataArray(
+            np.zeros((2, 4, 4), dtype=np.float32),
+            dims=["bands", "latitude", "longitude"],
+            coords={
+                "bands": cube.coords["bands"],
+                "latitude": shifted_lat,
+                "longitude": shifted_lon,
+            },
+        )
+        # Mark pixel [0, 0, 0] in the mask as active
+        mask_data.values[0, 0, 0] = 1.0
+        # Should not raise; spatial misalignment is resolved implicitly
+        result = raster_mask(cube, mask_data)
+        # The nearest-neighbour mapping rounds shifted[0] -> original[0] (0.3 < 0.5),
+        # so the aligned mask should activate at original pixel [0, 0, 0, 0].
+        assert np.isnan(result.values[0, 0, 0, 0]), (
+            "Nearest-neighbour-aligned mask pixel [0,0] should mask data pixel [0,0]"
+        )
+        # All-zero mask entries map to original[1] (0.3 offset from original[1])
+        # which is still 0, so other pixels should be unchanged.
+        assert not np.isnan(result.values[0, 0, 1, 1]), (
+            "Unmasked pixels should be preserved after spatial alignment"
+        )
+        # Verify the result has data's spatial coordinates (not the shifted ones)
+        np.testing.assert_array_equal(result.coords["latitude"].values, lat)
+        np.testing.assert_array_equal(result.coords["longitude"].values, lon)
+
+    def test_mask_spatial_coarser_resolution_auto_aligned(self):
+        """Mask at coarser spatial resolution is auto-aligned to data grid."""
+        cube = _make_raster()
+        lat = cube.coords["latitude"].values
+        lon = cube.coords["longitude"].values
+        # Coarser mask: every other spatial point
+        coarse_lat = lat[::2]
+        coarse_lon = lon[::2]
+        mask_data = xr.DataArray(
+            np.zeros((2, len(coarse_lat), len(coarse_lon)), dtype=bool),
+            dims=["bands", "latitude", "longitude"],
+            coords={
+                "bands": cube.coords["bands"],
+                "latitude": coarse_lat,
+                "longitude": coarse_lon,
+            },
+        )
+        mask_data.values[0, 0, 0] = True
+        # Should succeed without raising IncompatibleDataCubes
+        result = raster_mask(cube, mask_data)
+        assert result is not None
 
 
 # ---------------------------------------------------------------
