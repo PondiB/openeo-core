@@ -1359,8 +1359,8 @@ def mask_polygon(
         should_replace = outside_da
 
     result = xr.where(should_replace, fill_value, data)
-    # Restore original NaN positions.
-    result = xr.where(np.isnan(data), np.nan, result)
+    # Restore original missing-value positions in a dtype-preserving way.
+    result = xr.where(data.isnull(), data, result)
 
     return result
 
