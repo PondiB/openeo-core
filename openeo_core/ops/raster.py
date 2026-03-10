@@ -1586,15 +1586,16 @@ def _cloud_detection_s2cloudless(
         all_bands=False,
     )
 
-    # Materialise if dask-backed (s2cloudless works on numpy arrays)
-    vals = subset.values if not hasattr(subset, "compute") else subset.compute().values
-
     if has_time:
         # Transpose to (time, y, x, bands)
         target_order = ["time", y_dim_name, x_dim_name, bands_dim]
         subset_ordered = subset.transpose(*target_order)
-        arr = subset_ordered.values if not hasattr(subset_ordered, "compute") else subset_ordered.compute().values
 
+        # Materialise if dask-backed (s2cloudless works on numpy arrays)
+        data_obj = subset_ordered.data
+        if hasattr(data_obj, "compute"):
+            data_obj = data_obj.compute()
+        arr = np.asarray(data_obj)
         # s2cloudless expects reflectance in [0, 1]; if data looks like
         # integer reflectance (> 1), normalise.
         if np.nanmax(arr) > 10:
