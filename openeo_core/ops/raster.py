@@ -1366,13 +1366,15 @@ def mask_polygon(
 
 def _extract_geometries(mask_geom: Any, shape_fn: Any) -> list:
     """Normalise *mask_geom* into a list of shapely geometries."""
-    import geopandas as gpd
-
-    if isinstance(mask_geom, gpd.GeoDataFrame):
-        return list(mask_geom.geometry)
-    if isinstance(mask_geom, gpd.GeoSeries):
-        return list(mask_geom)
-
+    try:
+        import geopandas as gpd
+    except ImportError:
+        gpd = None  # type: ignore[assignment]
+    else:
+        if isinstance(mask_geom, gpd.GeoDataFrame):
+            return list(mask_geom.geometry)
+        if isinstance(mask_geom, gpd.GeoSeries):
+            return list(mask_geom)
     # Shapely geometry (Polygon, MultiPolygon, etc.)
     try:
         from shapely.geometry.base import BaseGeometry
