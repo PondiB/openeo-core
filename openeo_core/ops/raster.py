@@ -1236,8 +1236,9 @@ def mask(
     # is not already NaN.
     result = xr.where(is_masked, fill_value, data)
 
-    # Restore original NaN positions so no-data values are untouched.
-    result = xr.where(np.isnan(data), np.nan, result)
+    # Restore original missing-data positions so no-data values are untouched.
+    missing = xr.isnull(data)
+    result = xr.where(missing, data, result)
 
     return result
 
