@@ -28,8 +28,8 @@ from openeo_core.ops.raster import (
 
 def _make_raster(dask_backed: bool = False) -> xr.DataArray:
     """Create a small test raster cube with (time, bands, latitude, longitude) dims."""
-    np.random.seed(42)
-    data = np.random.rand(2, 2, 4, 4).astype(np.float32)
+    rng = np.random.default_rng(42)
+    data = rng.random((2, 2, 4, 4)).astype(np.float32)
     if dask_backed:
         data = da.from_array(data, chunks=(1, 2, 4, 4))  # type: ignore[assignment]
     return xr.DataArray(
@@ -152,8 +152,8 @@ class TestAggregateSpatial:
 
 def _make_raster_long(months: int = 14) -> xr.DataArray:
     """Create a raster cube spanning multiple months for temporal tests."""
-    np.random.seed(99)
-    data = np.random.rand(months, 2, 3, 3).astype(np.float32)
+    rng = np.random.default_rng(99)
+    data = rng.random((months, 2, 3, 3)).astype(np.float32)
     return xr.DataArray(
         data,
         dims=["time", "bands", "latitude", "longitude"],
@@ -224,8 +224,8 @@ class TestAggregateTemporal:
     def test_aggregate_temporal_dekad(self):
         """Dekad aggregation should produce YYYY-DD labels with correct 1-based indexing."""
         # Test with data that has specific known dates
-        np.random.seed(42)
-        data = np.random.rand(6, 2, 4, 4).astype(np.float32)
+        rng = np.random.default_rng(42)
+        data = rng.random((6, 2, 4, 4)).astype(np.float32)
         cube = xr.DataArray(
             data,
             dims=["time", "bands", "latitude", "longitude"],
@@ -308,8 +308,8 @@ _HAS_RIOXARRAY = importlib.util.find_spec("rioxarray") is not None
 
 def _make_geo_raster() -> xr.DataArray:
     """Create a CRS-aware raster for resample_spatial tests."""
-    np.random.seed(7)
-    data = np.random.rand(2, 10, 10).astype(np.float32)
+    rng = np.random.default_rng(7)
+    data = rng.random((2, 10, 10)).astype(np.float32)
     da = xr.DataArray(
         data,
         dims=["bands", "latitude", "longitude"],
@@ -366,9 +366,9 @@ class TestResampleSpatial:
 
     def test_4d_cube(self):
         """resample_spatial must handle 4-D cubes (time, bands, latitude, longitude)."""
-        np.random.seed(8)
+        rng = np.random.default_rng(8)
         da4d = xr.DataArray(
-            np.random.rand(2, 2, 10, 10).astype(np.float32),
+            rng.random((2, 2, 10, 10)).astype(np.float32),
             dims=["time", "bands", "latitude", "longitude"],
             coords={
                 "time": pd.date_range("2023-01-01", periods=2, freq="ME"),
@@ -389,9 +389,9 @@ class TestResampleSpatial:
 
     def test_4d_reproject(self):
         """Reprojecting a 4-D cube should preserve all non-spatial dims."""
-        np.random.seed(9)
+        rng = np.random.default_rng(9)
         da4d = xr.DataArray(
-            np.random.rand(2, 2, 10, 10).astype(np.float32),
+            rng.random((2, 2, 10, 10)).astype(np.float32),
             dims=["time", "bands", "latitude", "longitude"],
             coords={
                 "time": pd.date_range("2023-01-01", periods=2, freq="ME"),
@@ -416,9 +416,9 @@ class TestResampleSpatial:
         will be a numpy array. This test verifies that our reshape operations
         (which we control) preserve dask arrays until the reproject step.
         """
-        np.random.seed(10)
+        rng = np.random.default_rng(10)
         arr = da.from_array(
-            np.random.rand(2, 2, 10, 10).astype(np.float32),
+            rng.random((2, 2, 10, 10)).astype(np.float32),
             chunks=(1, 2, 10, 10)
         )
         da4d = xr.DataArray(
@@ -549,8 +549,8 @@ class TestArrayInterpolateLinear:
 
     def test_raster_4d_cube(self):
         """Interpolation on a full 4-D raster cube along time."""
-        np.random.seed(42)
-        data = np.random.rand(5, 2, 3, 3).astype(np.float32)
+        rng = np.random.default_rng(42)
+        data = rng.random((5, 2, 3, 3)).astype(np.float32)
         # Punch some NaN holes at time indices 1 and 3
         data[1, :, :, :] = np.nan
         data[3, :, :, :] = np.nan
@@ -768,8 +768,8 @@ from openeo_core.ops.raster import mask_polygon
 
 def _make_spatial_raster() -> xr.DataArray:
     """Create a simple spatial raster for mask_polygon tests."""
-    np.random.seed(77)
-    data = np.random.rand(5, 5).astype(np.float32)
+    rng = np.random.default_rng(77)
+    data = rng.random((5, 5)).astype(np.float32)
     return xr.DataArray(
         data,
         dims=["latitude", "longitude"],
@@ -880,10 +880,10 @@ _HAS_S2CLOUDLESS = importlib.util.find_spec("s2cloudless") is not None
 
 def _make_sentinel2_raster(with_time: bool = True) -> xr.DataArray:
     """Create a fake Sentinel-2 raster with the 10 bands required by s2cloudless."""
-    np.random.seed(123)
+    rng = np.random.default_rng(123)
     bands = ["B01", "B02", "B04", "B05", "B08", "B8A", "B09", "B10", "B11", "B12"]
     if with_time:
-        data = np.random.randint(0, 4000, size=(2, len(bands), 8, 8)).astype(np.float32)
+        data = rng.integers(0, 4000, size=(2, len(bands), 8, 8)).astype(np.float32)
         return xr.DataArray(
             data,
             dims=["time", "bands", "latitude", "longitude"],
@@ -895,7 +895,7 @@ def _make_sentinel2_raster(with_time: bool = True) -> xr.DataArray:
             },
         )
     else:
-        data = np.random.randint(0, 4000, size=(len(bands), 8, 8)).astype(np.float32)
+        data = rng.integers(0, 4000, size=(len(bands), 8, 8)).astype(np.float32)
         return xr.DataArray(
             data,
             dims=["bands", "latitude", "longitude"],
@@ -995,14 +995,14 @@ def _make_landsat_raster(with_time: bool = True) -> xr.DataArray:
     QA_PIXEL is a 16-bit bitmask.  We set specific bit patterns so
     that cloud and shadow confidence levels are deterministic.
     """
-    np.random.seed(456)
+    rng = np.random.default_rng(456)
     bands = ["SR_B1", "SR_B2", "SR_B3", "SR_B4", "SR_B5", "SR_B6", "SR_B7", "QA_PIXEL"]
     ny, nx = 6, 6
     n_bands = len(bands)
 
     if with_time:
         n_time = 2
-        data = np.random.randint(100, 3000, size=(n_time, n_bands, ny, nx)).astype(np.float32)
+        data = rng.integers(100, 3000, size=(n_time, n_bands, ny, nx)).astype(np.float32)
         # Overwrite QA_PIXEL band (index 7) with deterministic bitmask values
         qa_band_idx = bands.index("QA_PIXEL")
         qa_vals = _make_qa_pixel_values(ny, nx)
@@ -1019,7 +1019,7 @@ def _make_landsat_raster(with_time: bool = True) -> xr.DataArray:
             },
         )
     else:
-        data = np.random.randint(100, 3000, size=(n_bands, ny, nx)).astype(np.float32)
+        data = rng.integers(100, 3000, size=(n_bands, ny, nx)).astype(np.float32)
         qa_band_idx = bands.index("QA_PIXEL")
         data[qa_band_idx, :, :] = _make_qa_pixel_values(ny, nx)
         return xr.DataArray(
