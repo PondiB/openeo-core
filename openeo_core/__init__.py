@@ -5,6 +5,7 @@ from openeo_core.exceptions import (
     BandExists,
     DimensionAmbiguous,
     DimensionNotAvailable,
+    IncompatibleDataCubes,
     KernelDimensionsUneven,
     NirBandAmbiguous,
     RedBandAmbiguous,
@@ -21,10 +22,11 @@ __all__ = [
     "BandExists",
     "DimensionAmbiguous",
     "DimensionNotAvailable",
+    "IncompatibleDataCubes",
     "KernelDimensionsUneven",
     "NirBandAmbiguous",
     "RedBandAmbiguous",
     "UnitMismatch",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"

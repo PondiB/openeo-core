@@ -8,6 +8,7 @@ from openeo_core.exceptions.ndvi import (
 )
 from openeo_core.exceptions.general import (
     DimensionNotAvailable,
+    IncompatibleDataCubes,
     KernelDimensionsUneven,
     UnitMismatch,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "BandExists",
     "DimensionAmbiguous",
     "DimensionNotAvailable",
+    "IncompatibleDataCubes",
     "KernelDimensionsUneven",
     "NirBandAmbiguous",
     "RedBandAmbiguous",
