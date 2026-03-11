@@ -1,6 +1,6 @@
 [project]
 name = "openeo-core"
-version = "0.1.1"
+version = "0.1.2"
 description = "Standalone Python core for defining and executing openEO processes locally with xarray, dask, and ML backends."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -79,3 +79,6 @@ packages = ["openeo_core"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+filterwarnings = [
+  "ignore:Support for class-based `config` is deprecated, use ConfigDict instead:DeprecationWarning:planetary_computer.sas",
+]
