@@ -72,7 +72,7 @@ class TestNDVI:
     def test_ndvi_dimension_ambiguous(self):
         """DimensionAmbiguous when bands dimension is missing."""
         cube = xr.DataArray(
-            np.random.rand(4, 4).astype(np.float32),
+            np.random.default_rng().random((4, 4)).astype(np.float32),
             dims=["y", "x"],
         )
         with pytest.raises(DimensionAmbiguous, match="not available"):
