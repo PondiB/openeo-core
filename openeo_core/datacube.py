@@ -77,7 +77,8 @@ class DataCube:
         collection_id : str
             STAC collection identifier (e.g. ``"sentinel-2-l2a"``).
         adapter : CollectionLoader | None
-            Custom loader.  Uses the default AWS Earth Search adapter when ``None``.
+            Custom loader.  Uses the default Microsoft Planetary Computer adapter
+            when ``None``.
         spatial_extent : dict | None
             Bounding box ``{west, south, east, north}``.  May include an
             optional ``crs`` key (EPSG code as int, or WKT2 string;

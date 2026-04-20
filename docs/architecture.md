@@ -24,7 +24,7 @@ openeo-core provides:
 | **geopandas** | Vector cube representation (GeoDataFrame) |
 | **xvec** | Geometry coordinates in xarray (vector cubes, zonal stats) |
 | **stackstac** | Stack STAC Items into lazy xarray DataArrays |
-| **pystac-client** | STAC API search (e.g. AWS Earth Search) |
+| **pystac-client** | STAC API search (default: Microsoft Planetary Computer) |
 | **planetary-computer** | SAS token signing for Microsoft Planetary Computer |
 | **shapely** | Geometry handling |
 
@@ -103,7 +103,7 @@ Methods dispatch to the correct implementation based on `is_raster` / `is_vector
 
 | Classmethod | Module | Returns |
 |-------------|--------|---------|
-| `load_collection(collection_id, ...)` | `io.collection` | Raster `DataCube` from STAC API (Earth Search default) |
+| `load_collection(collection_id, ...)` | `io.collection` | Raster `DataCube` from STAC API (Planetary Computer default) |
 | `load_stac(source, ...)` | `io.stac` | Raster `DataCube` from arbitrary STAC source |
 | `load_geojson(source, ...)` | `io.geojson` | Vector `DataCube` (GeoDataFrame) |
 
@@ -118,8 +118,8 @@ Methods dispatch to the correct implementation based on `is_raster` / `is_vector
 
 ### 5.1 load_collection
 
-- **Default adapter**: `AWSCollectionLoader` (Element 84 Earth Search STAC API)
-- **Flow**: `pystac_client.Client.open()` → `search()` with bbox, datetime, collections → `stackstac.stack()` → `xr.DataArray`
+- **Default adapter**: `MicrosoftPlanetaryComputerLoader` (Planetary Computer STAC API, SAS signing via `planetary-computer`)
+- **Flow**: `pystac_client.Client.open(..., modifier=planetary_computer.sign_inplace)` → `search()` with bbox, datetime, collections → `stackstac.stack()` → `xr.DataArray`
 - **Protocol**: `CollectionLoader` — users can inject custom loaders via `adapter=`.
 
 ### 5.2 load_stac

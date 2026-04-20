@@ -1,12 +1,13 @@
 """Collection loader – load named EO collections into RasterCubes.
 
-The default implementation uses **pystac-client** to search the
-`Earth Search <https://earth-search.aws.element84.com/v1>`_ STAC API
-(Sentinel-2 L2A on AWS) and **stackstac** to build a lazy xarray DataArray.
+The default implementation uses **pystac-client** to search the Microsoft
+`Planetary Computer <https://planetarycomputer.microsoft.com/>`_ STAC API and
+**stackstac** to build a lazy xarray DataArray.  Azure-hosted assets use SAS
+token signing via the **planetary-computer** package.
 
-A Microsoft `Planetary Computer <https://planetarycomputer.microsoft.com/>`_
-loader is also provided, which uses the **planetary-computer** package for
-SAS token signing.
+An alternative `Earth Search <https://earth-search.aws.element84.com/v1>`_
+(Element 84 on AWS) loader is also available when you want that catalog
+instead.
 """
 
 from __future__ import annotations
@@ -105,7 +106,10 @@ class BaseCollectionLoader(ABC):
         temporal_extent : tuple[str, str] | None
             ``(start_datetime, end_datetime)`` ISO-8601 strings.
         bands : list[str] | None
-            Asset / band names to include.  ``None`` loads all.
+            Asset / band names to include.  ``None`` loads all.  For Sentinel-2
+            L2A on Planetary Computer (``B04``, ``B08``, …), common eo-style
+            names such as ``red`` / ``nir`` are mapped to those asset ids when
+            present on the item.
         properties : dict | None
             Extra STAC query parameters (e.g. cloud cover filter).
         """
@@ -156,7 +160,9 @@ class BaseCollectionLoader(ABC):
         # Build lazy DataArray via stackstac
         stack_kwargs: dict[str, Any] = {}
         if bands is not None:
-            stack_kwargs["assets"] = bands
+            stack_kwargs["assets"] = _resolve_band_assets_for_stackstac(
+                items[0], bands
+            )
 
         # Determine the output EPSG for stacking.
         # If the user explicitly specified a CRS via spatial_extent, honour it
@@ -183,6 +189,11 @@ class BaseCollectionLoader(ABC):
 
         da: xr.DataArray = stackstac.stack(items, **stack_kwargs)
 
+        # stackstac labels the band dimension with STAC asset ids (e.g. B04);
+        # restore the caller's names (e.g. red, nir) for downstream NDVI etc.
+        if bands is not None and "band" in da.coords:
+            da = da.assign_coords(band=list(bands))
+
         # Rename dimensions to the library's conventional names.
         # stackstac produces: (time, band, y, x)
         # We normalise to: (time, bands, latitude, longitude)
@@ -200,30 +211,7 @@ class BaseCollectionLoader(ABC):
 
 
 # ---------------------------------------------------------------------------
-# Default implementation – AWS Earth Search via pystac-client + stackstac
-# ---------------------------------------------------------------------------
-
-
-class AWSCollectionLoader(BaseCollectionLoader):
-    """Load collections from the Element 84 Earth Search STAC API on AWS.
-
-    This is a convenience default; users can inject any
-    :class:`CollectionLoader`-compatible adapter.
-
-    Inherits the initialization and load_collection behavior from
-    :class:`BaseCollectionLoader`.
-
-    Parameters
-    ----------
-    api_url : str, optional
-        STAC API endpoint. Defaults to Earth Search v1.
-    """
-
-    DEFAULT_API_URL = "https://earth-search.aws.element84.com/v1"
-
-
-# ---------------------------------------------------------------------------
-# Microsoft Planetary Computer via pystac-client + stackstac
+# Default – Microsoft Planetary Computer via pystac-client + stackstac
 # ---------------------------------------------------------------------------
 
 
@@ -236,7 +224,8 @@ class MicrosoftPlanetaryComputerLoader(BaseCollectionLoader):
 
     Inherits the initialization and load_collection behavior from
     :class:`BaseCollectionLoader`, and overrides ``_open_catalog`` to add
-    SAS token signing.
+    SAS token signing.  Used as the module default for :func:`load_collection`
+    when *adapter* is omitted.
 
     See https://planetarycomputer.microsoft.com/docs/quickstarts/reading-stac/
 
@@ -263,10 +252,33 @@ class MicrosoftPlanetaryComputerLoader(BaseCollectionLoader):
 
 
 # ---------------------------------------------------------------------------
+# Alternative – Element 84 Earth Search via pystac-client + stackstac
+# ---------------------------------------------------------------------------
+
+
+class AWSCollectionLoader(BaseCollectionLoader):
+    """Load collections from the Element 84 Earth Search STAC API on AWS.
+
+    Use this loader when you prefer Earth Search over the default Microsoft
+    Planetary Computer catalog (pass ``adapter=AWSCollectionLoader()``).
+
+    Inherits the initialization and load_collection behavior from
+    :class:`BaseCollectionLoader`.
+
+    Parameters
+    ----------
+    api_url : str, optional
+        STAC API endpoint. Defaults to Earth Search v1.
+    """
+
+    DEFAULT_API_URL = "https://earth-search.aws.element84.com/v1"
+
+
+# ---------------------------------------------------------------------------
 # Module-level convenience
 # ---------------------------------------------------------------------------
 
-_default = AWSCollectionLoader()
+_default = MicrosoftPlanetaryComputerLoader()
 
 
 def load_collection(
@@ -284,7 +296,8 @@ def load_collection(
     Parameters
     ----------
     adapter : CollectionLoader | None
-        Custom loader.  Uses the default AWS Earth Search adapter when *None*.
+        Custom loader.  Uses the default Microsoft Planetary Computer adapter
+        when *None*.
     """
     loader = adapter or _default
     return loader.load_collection(
@@ -300,6 +313,79 @@ def load_collection(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+# Sentinel-2 L2A common names / aliases → Planetary Computer (and similar) asset keys.
+_S2_COMMON_BAND_ALIASES: dict[str, str] = {
+    "coastal": "B01",
+    "b01": "B01",
+    "blue": "B02",
+    "b02": "B02",
+    "green": "B03",
+    "b03": "B03",
+    "red": "B04",
+    "b04": "B04",
+    "rededge1": "B05",
+    "b05": "B05",
+    "rededge2": "B06",
+    "b06": "B06",
+    "rededge3": "B07",
+    "b07": "B07",
+    "nir": "B08",
+    "b08": "B08",
+    "b8a": "B8A",
+    "watervapor": "B09",
+    "b09": "B09",
+    "cirrus": "B10",
+    "b10": "B10",
+    "swir16": "B11",
+    "b11": "B11",
+    "swir22": "B12",
+    "b12": "B12",
+}
+
+
+def _item_asset_keys(item: Any) -> set[str]:
+    assets = getattr(item, "assets", None)
+    if not assets:
+        return set()
+    return set(assets.keys())
+
+
+def _resolve_band_assets_for_stackstac(item: Any, bands: list[str]) -> list[str]:
+    """Map requested band labels to STAC asset ids present on *item*.
+
+    Element 84 catalogs often expose ``red`` / ``nir`` assets; Microsoft
+    Planetary Computer uses ``B04`` / ``B08``.  Without this mapping,
+    stackstac skips missing assets and can fail with ``out_bounds=None``.
+    """
+    keys = _item_asset_keys(item)
+    lower_to_key: dict[str, str] = {}
+    for key in keys:
+        lower_to_key.setdefault(key.lower(), key)
+    out: list[str] = []
+    for label in bands:
+        if label in keys:
+            out.append(label)
+            continue
+        lowered = label.lower()
+        ci_key = lower_to_key.get(lowered)
+        if ci_key is not None:
+            out.append(ci_key)
+            continue
+        alias = _S2_COMMON_BAND_ALIASES.get(lowered)
+        if alias and alias in keys:
+            out.append(alias)
+            continue
+        sample = ", ".join(sorted(keys)[:24])
+        suffix = " …" if len(keys) > 24 else ""
+        raise ValueError(
+            f"No STAC asset for band {label!r} on the first returned item. "
+            f"Example asset keys: {sample}{suffix}. "
+            "Use one of the available asset keys exposed by this catalog/item. "
+            "For Sentinel-2, catalogs commonly use either common names such as "
+            "red and nir, or band ids such as B04 and B08."
+        )
+    return out
 
 
 def _is_epsg_4326(crs: int | str) -> bool:
