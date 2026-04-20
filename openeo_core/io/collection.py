@@ -377,8 +377,9 @@ def _resolve_band_assets_for_stackstac(item: Any, bands: list[str]) -> list[str]
         raise ValueError(
             f"No STAC asset for band {label!r} on the first returned item. "
             f"Example asset keys: {sample}{suffix}. "
-            "For Planetary Computer S2 L2A use ids like B04 and B08, or common "
-            "names such as red and nir."
+            "Use one of the available asset keys exposed by this catalog/item. "
+            "For Sentinel-2, catalogs commonly use either common names such as "
+            "red and nir, or band ids such as B04 and B08."
         )
     return out
 
