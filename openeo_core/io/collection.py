@@ -359,14 +359,18 @@ def _resolve_band_assets_for_stackstac(item: Any, bands: list[str]) -> list[str]
     stackstac skips missing assets and can fail with ``out_bounds=None``.
     """
     keys = _item_asset_keys(item)
+    lower_to_key: dict[str, str] = {}
+    for key in sorted(keys):
+        lower_to_key.setdefault(key.lower(), key)
     out: list[str] = []
     for label in bands:
         if label in keys:
             out.append(label)
             continue
         lowered = label.lower()
-        if lowered in keys:
-            out.append(lowered)
+        ci_key = lower_to_key.get(lowered)
+        if ci_key is not None:
+            out.append(ci_key)
             continue
         alias = _S2_COMMON_BAND_ALIASES.get(lowered)
         if alias and alias in keys:

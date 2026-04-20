@@ -31,6 +31,11 @@ def test_resolve_earth_search_style_assets_unchanged() -> None:
     assert _resolve_band_assets_for_stackstac(item, ["red", "nir"]) == ["red", "nir"]
 
 
+def test_resolve_case_insensitive_existing_asset_key() -> None:
+    item = _FakeItem(["B04", "B08", "SCL"])
+    assert _resolve_band_assets_for_stackstac(item, ["scl"]) == ["SCL"]
+
+
 def test_resolve_unknown_band_raises() -> None:
     item = _FakeItem(["B04", "B08"])
     with pytest.raises(ValueError, match="No STAC asset for band 'foo'"):
