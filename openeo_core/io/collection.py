@@ -360,7 +360,7 @@ def _resolve_band_assets_for_stackstac(item: Any, bands: list[str]) -> list[str]
     """
     keys = _item_asset_keys(item)
     lower_to_key: dict[str, str] = {}
-    for key in sorted(keys):
+    for key in keys:
         lower_to_key.setdefault(key.lower(), key)
     out: list[str] = []
     for label in bands:
