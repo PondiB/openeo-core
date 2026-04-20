@@ -73,7 +73,7 @@ uv sync --extra dev
 ```python
 from openeo_core import DataCube
 
-# Load from AWS Earth Search (Sentinel-2)
+# Load from Microsoft Planetary Computer (Sentinel-2)
 cube = DataCube.load_collection(
     "sentinel-2-l2a",
     spatial_extent={"west": 10.0, "south": 50.0, "east": 11.0, "north": 51.0},
