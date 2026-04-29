@@ -350,6 +350,13 @@ class DataCube:
             _rd(self._data, reducer, dimension=dimension, context=context)  # type: ignore[arg-type]
         )
 
+    def drop_dimension(self, *, name: str) -> "DataCube":
+        """Drop a dimension that has exactly one label (``drop_dimension``)."""
+        self._assert_raster("drop_dimension")
+        from openeo_core.ops.raster import drop_dimension as _dd
+
+        return DataCube(_dd(self._data, name=name))  # type: ignore[arg-type]
+
     def apply_kernel(
         self,
         *,

@@ -7,6 +7,11 @@ from openeo_core.exceptions.ndvi import (
     RedBandAmbiguous,
 )
 from openeo_core.exceptions.general import (
+    ArrayElementNotAvailable,
+    ArrayElementParameterConflict,
+    ArrayElementParameterMissing,
+    ArrayNotLabeled,
+    DimensionLabelCountMismatch,
     DimensionNotAvailable,
     IncompatibleDataCubes,
     KernelDimensionsUneven,
@@ -14,8 +19,13 @@ from openeo_core.exceptions.general import (
 )
 
 __all__ = [
+    "ArrayElementNotAvailable",
+    "ArrayElementParameterConflict",
+    "ArrayElementParameterMissing",
+    "ArrayNotLabeled",
     "BandExists",
     "DimensionAmbiguous",
+    "DimensionLabelCountMismatch",
     "DimensionNotAvailable",
     "IncompatibleDataCubes",
     "KernelDimensionsUneven",

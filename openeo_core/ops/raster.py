@@ -12,6 +12,7 @@ import xarray as xr
 from openeo_core.exceptions import (
     BandExists,
     DimensionAmbiguous,
+    DimensionLabelCountMismatch,
     DimensionNotAvailable,
     IncompatibleDataCubes,
     KernelDimensionsUneven,
@@ -1068,6 +1069,45 @@ def reduce_dimension(
     else:
         result = data.reduce(reduce_fn, dim=dimension)
 
+    return result
+
+
+_MSG_DROP_DIM_MISMATCH = (
+    "The number of dimension labels exceeds one, which requires a reducer."
+)
+
+
+def drop_dimension(
+    data: RasterCube,
+    *,
+    name: str,
+) -> RasterCube:
+    """Drop a cube dimension when it holds exactly one label.
+
+    Implements the ``drop_dimension`` openEO process.
+
+    Raises
+    ------
+    DimensionNotAvailable
+        If *name* does not exist on ``data``.
+    DimensionLabelCountMismatch
+        If that dimension holds zero or multiple labels.
+    """
+    if name not in data.dims:
+        raise DimensionNotAvailable(
+            f"A dimension with the specified name '{name}' does not exist. "
+            f"Available dimensions: {list(data.dims)}"
+        )
+    sz = int(data.sizes[name])
+    if sz > 1:
+        raise DimensionLabelCountMismatch(_MSG_DROP_DIM_MISMATCH)
+    if sz == 0:
+        raise DimensionLabelCountMismatch(
+            "The dimension has no labels; exactly one label is required to drop "
+            "this dimension without a reducer."
+        )
+
+    result = data.isel({name: 0}, drop=True)
     return result
 
 
