@@ -2,8 +2,13 @@
 
 from openeo_core.datacube import DataCube
 from openeo_core.exceptions import (
+    ArrayElementNotAvailable,
+    ArrayElementParameterConflict,
+    ArrayElementParameterMissing,
+    ArrayNotLabeled,
     BandExists,
     DimensionAmbiguous,
+    DimensionLabelCountMismatch,
     DimensionNotAvailable,
     IncompatibleDataCubes,
     KernelDimensionsUneven,
@@ -19,8 +24,13 @@ __all__ = [
     "RasterCube",
     "VectorCube",
     # openEO spec exceptions
+    "ArrayElementNotAvailable",
+    "ArrayElementParameterConflict",
+    "ArrayElementParameterMissing",
+    "ArrayNotLabeled",
     "BandExists",
     "DimensionAmbiguous",
+    "DimensionLabelCountMismatch",
     "DimensionNotAvailable",
     "IncompatibleDataCubes",
     "KernelDimensionsUneven",
@@ -29,4 +39,4 @@ __all__ = [
     "UnitMismatch",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

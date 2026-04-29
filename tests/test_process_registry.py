@@ -43,3 +43,41 @@ class TestProcessRegistry:
     def test_filter_bbox_spec(self, registry):
         spec = registry.get_process("filter_bbox")
         assert "parameters" in spec
+
+    def test_eq_spec(self, registry):
+        spec = registry.get_process("eq")
+        assert spec["id"] == "eq"
+        assert spec["categories"] == ["texts", "comparison"]
+
+    def test_or_spec(self, registry):
+        spec = registry.get_process("or")
+        assert spec["id"] == "or"
+        assert spec["categories"] == ["logic"]
+        assert "process_graph" in spec
+
+    def test_median_spec(self, registry):
+        spec = registry.get_process("median")
+        assert spec["id"] == "median"
+        assert spec["categories"] == ["math > statistics", "reducer"]
+        assert "process_graph" in spec
+
+    def test_array_element_spec(self, registry):
+        spec = registry.get_process("array_element")
+        assert spec["id"] == "array_element"
+        assert spec["categories"] == ["arrays", "reducer"]
+        assert "exceptions" in spec
+
+    def test_reduce_dimension_spec(self, registry):
+        spec = registry.get_process("reduce_dimension")
+        assert spec["id"] == "reduce_dimension"
+        assert spec["categories"] == ["cubes", "reducer"]
+        assert "links" in spec
+        assert "exceptions" in spec
+
+    def test_drop_dimension_spec(self, registry):
+        spec = registry.get_process("drop_dimension")
+        assert spec["id"] == "drop_dimension"
+        assert spec["categories"] == ["cubes"]
+        assert spec["exceptions"]["DimensionLabelCountMismatch"]["message"].startswith(
+            "The number of dimension labels exceeds one"
+        )
