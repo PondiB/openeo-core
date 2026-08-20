@@ -351,11 +351,22 @@ class DataCube:
         )
 
     def drop_dimension(self, *, name: str) -> "DataCube":
-        """Drop a dimension that has exactly one label (``drop_dimension``)."""
-        self._assert_raster("drop_dimension")
-        from openeo_core.ops.raster import drop_dimension as _dd
+        """Drop a dimension that has exactly one label (``drop_dimension``).
 
-        return DataCube(_dd(self._data, name=name))  # type: ignore[arg-type]
+        Works on raster and vector cubes.  For GeoDataFrame-backed vector cubes
+        the dimensions are ``"geometry"`` (labelled by the rows) and
+        ``"properties"`` (labelled by the attribute columns); dropping
+        ``"geometry"`` yields a cube without geometries.
+        """
+        if self.is_raster:
+            from openeo_core.ops.raster import drop_dimension as _dd_r
+
+            return DataCube(_dd_r(self._data, name=name))  # type: ignore[arg-type]
+
+        self._assert_vector("drop_dimension")
+        from openeo_core.ops.vector import drop_dimension as _dd_v
+
+        return DataCube(_dd_v(self._data, name=name))  # type: ignore[arg-type]
 
     def apply_kernel(
         self,
