@@ -6,12 +6,22 @@ from typing import Any, Callable
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import pyproj
 import xarray as xr
 import dask_geopandas
 import xvec  # noqa: F401
 
-from openeo_core.exceptions import DimensionNotAvailable, UnitMismatch
+from openeo_core.exceptions import (
+    DimensionLabelCountMismatch,
+    DimensionNotAvailable,
+    UnitMismatch,
+)
+from openeo_core.ops.raster import (
+    _MSG_DROP_DIM_EMPTY,
+    _MSG_DROP_DIM_MISMATCH,
+    drop_dimension as _drop_xarray_dimension,
+)
 from openeo_core.types import VectorCube
 
 # ---------------------------------------------------------------------------
@@ -219,6 +229,93 @@ def filter_bbox(
         f"filter_bbox only supports GeoDataFrame, dask GeoDataFrame, or xarray "
         f"DataArray/Dataset with xvec geometry; got {type(data)!r}."
     )
+
+# ---------------------------------------------------------------------------
+# drop_dimension (vector)
+# ---------------------------------------------------------------------------
+
+#: Dimension names of a table-backed vector cube: the geometries are the labels
+#: of the ``geometry`` dimension, the attribute columns the labels of the
+#: ``properties`` dimension.
+_GEOMETRY_DIM = "geometry"
+_PROPERTIES_DIM = "properties"
+
+
+def drop_dimension(
+    data: VectorCube,
+    *,
+    name: str,
+) -> VectorCube | pd.DataFrame:
+    """Drop a vector cube dimension when it holds exactly one label.
+
+    Implements the ``drop_dimension`` openEO process for vector cubes.
+
+    For xarray-backed cubes (xvec or plain) this defers to the raster
+    implementation, since dropping a dimension is the same operation on any
+    xarray object.  Dropping the geometry dimension of an xvec cube therefore
+    yields an xarray object without geometry coordinates.
+
+    For GeoDataFrame-backed cubes the two dimensions are ``"geometry"`` (its
+    labels are the rows; the active geometry column name is also accepted) and
+    ``"properties"`` (its labels are the attribute columns).  Dropping
+    ``"geometry"`` returns a plain :class:`pandas.DataFrame`, because the
+    result no longer carries geometries; dropping ``"properties"`` returns a
+    GeoDataFrame holding only the geometry column.
+
+    Note that counting the geometry labels of a dask GeoDataFrame triggers
+    computation.
+
+    Raises
+    ------
+    DimensionNotAvailable
+        If *name* does not exist on ``data``.
+    DimensionLabelCountMismatch
+        If that dimension holds zero or multiple labels.
+    """
+    if isinstance(data, (xr.DataArray, xr.Dataset)):
+        return _drop_xarray_dimension(data, name=name)
+
+    if isinstance(data, gpd.GeoDataFrame) or (
+        dask_geopandas is not None
+        and isinstance(data, dask_geopandas.GeoDataFrame)
+    ):
+        geom_col = _geometry_column_name(data)
+        if name in (_GEOMETRY_DIM, geom_col):
+            n_geometries = len(data)  # triggers computation for dask cubes
+            if n_geometries > 1:
+                raise DimensionLabelCountMismatch(_MSG_DROP_DIM_MISMATCH)
+            if n_geometries == 0:
+                raise DimensionLabelCountMismatch(_MSG_DROP_DIM_EMPTY)
+            result = data.drop(columns=[geom_col])
+            # Without geometries the result is no longer a vector cube.
+            return pd.DataFrame(result) if isinstance(result, gpd.GeoDataFrame) else result
+
+        if name == _PROPERTIES_DIM:
+            property_cols = [c for c in data.columns if c != geom_col]
+            if len(property_cols) > 1:
+                raise DimensionLabelCountMismatch(_MSG_DROP_DIM_MISMATCH)
+            if not property_cols:
+                raise DimensionLabelCountMismatch(_MSG_DROP_DIM_EMPTY)
+            return data.drop(columns=property_cols)
+
+        raise DimensionNotAvailable(
+            f"A dimension with the specified name '{name}' does not exist. "
+            f"Available dimensions: ['{_GEOMETRY_DIM}', '{_PROPERTIES_DIM}']"
+        )
+
+    raise TypeError(
+        f"drop_dimension expects a GeoDataFrame, dask GeoDataFrame, or xarray "
+        f"DataArray/Dataset; got {type(data)!r}."
+    )
+
+
+def _geometry_column_name(data: VectorCube) -> str:
+    """Return the active geometry column name, defaulting to ``"geometry"``."""
+    try:
+        return data.geometry.name
+    except AttributeError:
+        return _GEOMETRY_DIM
+
 
 # ---------------------------------------------------------------------------
 # apply (vector – row-wise operation)
