@@ -1076,15 +1076,25 @@ _MSG_DROP_DIM_MISMATCH = (
     "The number of dimension labels exceeds one, which requires a reducer."
 )
 
+_MSG_DROP_DIM_EMPTY = (
+    "The dimension has no labels; exactly one label is required to drop "
+    "this dimension without a reducer."
+)
+
 
 def drop_dimension(
-    data: RasterCube,
+    data: RasterCube | xr.Dataset,
     *,
     name: str,
-) -> RasterCube:
+) -> RasterCube | xr.Dataset:
     """Drop a cube dimension when it holds exactly one label.
 
     Implements the ``drop_dimension`` openEO process.
+
+    A dimension that an earlier operation already collapsed to a scalar
+    coordinate (e.g. ``cube.isel(time=0)`` without ``drop=True``) still counts
+    as a single-label dimension here and is dropped by removing that
+    coordinate.
 
     Raises
     ------
@@ -1093,22 +1103,23 @@ def drop_dimension(
     DimensionLabelCountMismatch
         If that dimension holds zero or multiple labels.
     """
-    if name not in data.dims:
-        raise DimensionNotAvailable(
-            f"A dimension with the specified name '{name}' does not exist. "
-            f"Available dimensions: {list(data.dims)}"
-        )
-    sz = int(data.sizes[name])
-    if sz > 1:
-        raise DimensionLabelCountMismatch(_MSG_DROP_DIM_MISMATCH)
-    if sz == 0:
-        raise DimensionLabelCountMismatch(
-            "The dimension has no labels; exactly one label is required to drop "
-            "this dimension without a reducer."
-        )
+    if name in data.dims:
+        sz = int(data.sizes[name])
+        if sz > 1:
+            raise DimensionLabelCountMismatch(_MSG_DROP_DIM_MISMATCH)
+        if sz == 0:
+            raise DimensionLabelCountMismatch(_MSG_DROP_DIM_EMPTY)
+        return data.isel({name: 0}, drop=True)
 
-    result = data.isel({name: 0}, drop=True)
-    return result
+    # A scalar coordinate is a dimension that was already reduced to a single
+    # label, so dropping it just means removing the leftover coordinate.
+    if name in data.coords and data.coords[name].ndim == 0:
+        return data.drop_vars(name)
+
+    raise DimensionNotAvailable(
+        f"A dimension with the specified name '{name}' does not exist. "
+        f"Available dimensions: {list(data.dims)}"
+    )
 
 
 # ---------------------------------------------------------------------------
